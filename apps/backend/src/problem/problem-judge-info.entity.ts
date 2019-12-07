@@ -6,7 +6,7 @@ import { ProblemJudgeInfo } from "./judge-info/problem-judge-info.interface";
 
 @Entity("problem_judge_info")
 export class ProblemJudgeInfoEntity {
-  @OneToOne(type => ProblemEntity)
+  @OneToOne(type => ProblemEntity, { onDelete: "CASCADE" })
   @JoinColumn()
   problem: Promise<ProblemEntity>;
 
