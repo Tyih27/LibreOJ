@@ -88,14 +88,6 @@ export async function validateTestcases(
     throw `Custom checker ${judgeInfo.checker.filename} doesn't exist.`;
 }
 
-export function getSubtaskCount(judgeInfo: JudgeInfoTraditional) {
-  return judgeInfo.subtasks.length;
-}
-
-export function getTestcaseCountOfSubtask(judgeInfo: JudgeInfoTraditional, subtaskIndex: number) {
-  return judgeInfo.subtasks[subtaskIndex].testcases.length;
-}
-
 export function hashSampleTestcase(judgeInfo: JudgeInfoTraditional, sample: ProblemSample) {
   return objectHash({
     inputData: sample.inputData,
