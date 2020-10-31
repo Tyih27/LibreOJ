@@ -1,6 +1,5 @@
 import React from "react";
-
-// import style from "./ProblemSearch.module.less";
+import { observer } from "mobx-react";
 
 import api from "@/api";
 import { useLocalizer } from "@/utils/hooks";
@@ -13,7 +12,10 @@ import { EmojiRenderer } from "./EmojiRenderer";
 interface ProblemSearchProps {
   className?: string;
   placeholder?: string;
-  queryParameters: Omit<ApiTypes.QueryProblemSetRequestDto, "keyword" | "titleOnly" | "skipCount" | "takeCount">;
+  queryParameters?: Omit<
+    ApiTypes.QueryProblemSetRequestDto,
+    "locale" | "keyword" | "titleOnly" | "skipCount" | "takeCount"
+  >;
   onResultSelect: (problem: ApiTypes.QueryProblemSetResponseItemDto) => void;
   onEnterPress?: (searchKeyword: string) => void;
 }
@@ -35,7 +37,7 @@ let ProblemSearch: React.FC<ProblemSearchProps> = props => {
         if (!input) return [];
 
         const { requestError, response } = await api.problem.queryProblemSet(
-          Object.assign({}, props.queryParameters, {
+          Object.assign({ locale: appState.locale }, props.queryParameters, {
             keyword: input,
             titleOnly: true,
             skipCount: 0,
@@ -59,4 +61,4 @@ let ProblemSearch: React.FC<ProblemSearchProps> = props => {
   );
 };
 
-export default ProblemSearch;
+export default observer(ProblemSearch);
