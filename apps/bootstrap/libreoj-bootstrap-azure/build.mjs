@@ -1,7 +1,10 @@
 import esbuild from "esbuild";
 import { nodeExternalsPlugin } from "esbuild-node-externals";
+import inlineImportPlugin from "esbuild-plugin-inline-import";
 
 import workspaceRoot from "../package.json";
+
+import "../config.mjs";
 
 esbuild.build({
   entryPoints: ["src/index.ts"],
@@ -12,6 +15,7 @@ esbuild.build({
   plugins: [
     nodeExternalsPlugin({
       allowList: workspaceRoot.workspaces
-    })
+    }),
+    inlineImportPlugin()
   ]
 });
