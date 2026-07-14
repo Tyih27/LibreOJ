@@ -1,9 +1,7 @@
 # LibreOJ Bootstrap
 
-Bootstrap serves LibreOJ's first HTML response and service worker while the frontend's content-hashed assets remain
-on the static CDN.
-
-The workspace graph is:
+Bootstrap serves the initial LibreOJ HTML document and service worker. It selects regional API, asset, avatar, and
+CDN endpoints without rebuilding the browser application.
 
 ```text
 @libreoj/frontend ─────────┐
@@ -14,16 +12,15 @@ The workspace graph is:
                      Azure    Cloudflare   static
 ```
 
-`@libreoj/bootstrap-config` reads the locally built frontend artifact, injects the service-worker installer,
-materializes regional substitutions from `settings.json`, minifies inline non-module scripts, and emits a generated
-`config.json`. The output is deterministic for a Git commit: build metadata uses the commit SHA and commit time.
+`@libreoj/bootstrap-config` reads `settings.json`, the Frontend build, and the Service Worker build. It writes
+`config.json` with regional HTML responses, the service worker response, and build metadata.
 
-Build a target and all its workspace dependencies with pnpm's dependency filter:
+`@libreoj/bootstrap-core` maps an incoming request and client region to the appropriate response. The Azure,
+Cloudflare, and static applications provide platform-specific entry points.
+
+## Build
 
 ```bash
 pnpm --filter '@libreoj/bootstrap-cloudflare...' --sort run build
 pnpm --filter '@libreoj/bootstrap-azure...' --sort run build
 ```
-
-Deployment is intentionally not configured. Provider-specific promotion must consume the frontend and Bootstrap
-artifacts from the same verified build.

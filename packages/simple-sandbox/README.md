@@ -1,27 +1,29 @@
 # simple-sandbox
 
-`simple-sandbox` is LibreOJ's internal native process sandbox. It creates Linux PID, mount, network, and UTS
-namespaces; configures cgroup v1 resource controllers; mounts the configured rootfs; drops privileges; and executes
-the requested program.
+`simple-sandbox` is LibreOJ's Linux process sandbox. It creates PID, mount, network, and UTS namespaces; configures
+cgroup v1 resource controllers; mounts a rootfs; drops privileges; and executes the requested program through a
+Node.js native addon.
 
-The package is private; native builds run as explicit workspace tasks instead of npm install hooks. Its original MIT
-attribution remains in `LICENSE`.
+## Requirements
+
+- Linux with cgroup v1 memory and swap accounting
+- CMake and a C++17 compiler
+- Node.js headers
+- `libfmt`
+- a rootfs containing `/etc/passwd` and the configured sandbox user
 
 ## Build
-
-Requirements are Linux, CMake, a C++17 compiler, Node.js headers, and `libfmt`.
 
 ```bash
 pnpm --filter simple-sandbox build
 pnpm --filter simple-sandbox build:native
 ```
 
-The TypeScript build writes `lib`; the native build writes `build/Release/sandbox.node`.
+The TypeScript build writes `lib`. The native build writes `build/Release/sandbox.node`.
 
-## Runtime contract
+## Runtime
 
-The host kernel must expose cgroup v1 memory+swap accounting. The supplied rootfs must contain `/etc/passwd` and the
-configured sandbox user. Judge working directories should be isolated tmpfs mounts because output-size enforcement
-also measures the resulting filesystem tree.
+Judge working directories should be separate tmpfs mounts. Output-size accounting includes the resulting filesystem
+tree. The runtime supports cgroup v1 and Linux namespaces; it does not support cgroup v2 or mount byte limits.
 
-The current implementation is Linux-only and does not implement cgroup v2 or mount byte limits.
+The package is licensed under the [MIT License](LICENSE).

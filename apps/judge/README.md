@@ -1,17 +1,19 @@
 # LibreOJ Judge
 
-The judge is a privileged Linux service that consumes tasks from the LibreOJ Backend, downloads immutable files,
-compiles submissions, runs them in `simple-sandbox`, and streams progress back over Socket.IO.
+The Judge consumes tasks from the Backend, downloads submission and problem files, compiles programs, executes them
+inside `simple-sandbox`, runs checkers, and streams progress to the Backend over Socket.IO.
 
 ## Requirements
 
 - Linux with cgroup v1 `memory`, `cpuacct`, and `pids` controllers
 - root privileges
-- a C++17 compiler, CMake, and `libfmt`
-- the testlib submodule
+- CMake, a C++17 compiler, and `libfmt`
+- the `vendor/testlib` submodule
 - a compiler rootfs compatible with `infra/sandbox-rootfs`
 
-Build the TypeScript packages and native addons from the repository root:
+## Build
+
+From the repository root:
 
 ```bash
 git submodule update --init --recursive
@@ -19,24 +21,22 @@ pnpm --filter '@libreoj/judge...' --sort run build
 pnpm build:native
 ```
 
-The filter suffix includes the Judge's workspace dependencies, so pnpm builds `simple-sandbox` and the shared Judge
-protocol before the Judge itself.
+## Configuration
 
-## Configuration and startup
+Create a Judge client in the Backend, copy `config-example.yaml`, and set its key. Configure persistent data and
+binary-cache directories, download limits, concurrency, task working directories, and the sandbox rootfs.
 
-Register one judge client in the Backend, copy `config-example.yaml`, and replace its example key. Data storage is
-persistent; binary cache and task working directories are cleared on process startup. Each working directory should
-be a separate tmpfs mount.
+Each task working directory should be a separate tmpfs mount. One Judge key identifies one active machine; use
+different keys for different machines.
+
+## Run
 
 ```bash
 sudo env LIBREOJ_JUDGE_CONFIG_FILE=./config.yaml pnpm --filter @libreoj/judge start
 ```
 
-Use `LIBREOJ_JUDGE_LOG_LEVEL` to override the configured Winston level.
+`LIBREOJ_JUDGE_LOG_LEVEL` overrides the configured log level. `taskConsumingThreads` controls concurrent Judge tasks,
+while `maxConcurrentTasks` limits compile and run operations.
 
-One judge key identifies one active machine. Never run concurrent clients with the same key: Backend session
-ownership and disconnect recovery assume a single connection. Increase `taskConsumingThreads` and
-`maxConcurrentTasks` for parallelism on one host.
-
-The supervisor restarts the TypeScript worker when the Backend connection is lost. Unacknowledged tasks are returned
-to the Redis queue and rehydrated from current database state before another Judge receives them.
+The supervisor restarts the worker after a Backend disconnection. Unacknowledged tasks return to the Redis queue and
+are loaded from current database state before another Judge receives them.
