@@ -1,11 +1,29 @@
 # LibreOJ Bootstrap
 
-Serve the first HTML page of [`loj.ac`](https://loj.ac), with CDNs, regional configurations and service worker, on Azure Function App, Cloudflare Workers, Aliyun OSS and VPS.
+Bootstrap serves LibreOJ's first HTML response and service worker while the frontend's content-hashed assets remain
+on the static CDN.
 
-* `core`: The (shared) core code of serving the HTML page with serverless platform.
-* `azure`: The Azure Function App project.
-* `cloudflare`: The Cloudflare Workers project.
-* `static`: Serve static files with Aliyun OSS or VPS for China mainland users.
-* `service-worker`: The Service Worker running in frontend.
+The workspace graph is:
 
-See [Actions](https://github.com/LibreOJ/bootstrap/actions) for deployment info.
+```text
+@libreoj/frontend ─────────┐
+@libreoj/service-worker ──┴─> @libreoj/bootstrap-config
+                                  ↓
+                         @libreoj/bootstrap-core
+                          ↙        ↓        ↘
+                     Azure    Cloudflare   static
+```
+
+`@libreoj/bootstrap-config` reads the locally built frontend artifact, injects the service-worker installer,
+materializes regional substitutions from `settings.json`, minifies inline non-module scripts, and emits a generated
+`config.json`. The output is deterministic for a Git commit: build metadata uses the commit SHA and commit time.
+
+Build a target and all its workspace dependencies with pnpm's dependency filter:
+
+```bash
+pnpm --filter '@libreoj/bootstrap-cloudflare...' --sort run build
+pnpm --filter '@libreoj/bootstrap-azure...' --sort run build
+```
+
+Deployment is intentionally not configured. Provider-specific promotion must consume the frontend and Bootstrap
+artifacts from the same verified build.
