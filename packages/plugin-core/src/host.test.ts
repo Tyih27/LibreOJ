@@ -421,6 +421,34 @@ test("dispose tears down plugins and root, clears services, and makes later call
   assert.throws(() => host.dumpConfig(), /disposed/i);
 });
 
+test("dumpConfig reports optional dependency availability for a mounted plugin", async () => {
+  const b: PluginDefinition = {
+    name: "b",
+    inject: { optional: ["extra"] },
+    apply() {}
+  };
+
+  const host = new PluginHost({ resolver: new InlineResolver({ b }) });
+  await host.load([{ bundles: ["b"] }]);
+
+  const optionalOf = (): Record<string, boolean> | undefined => {
+    const document = load(host.dumpConfig()) as {
+      plugins: { name: string; optional?: Record<string, boolean> }[];
+    };
+    return document.plugins.find(plugin => plugin.name === "b")?.optional;
+  };
+
+  assert.deepEqual(optionalOf(), { extra: false });
+
+  // An optional service becoming available is reflected without changing the activation state.
+  const gate = host.root.fork("gate");
+  gate.provide("extra", 1);
+  assert.equal(stateOf(host, "b"), "active");
+  assert.deepEqual(optionalOf(), { extra: true });
+
+  await host.dispose();
+});
+
 test("dumpConfig is stable, reports state, and sorts config keys", async () => {
   const a: PluginDefinition = {
     name: "a",

@@ -70,6 +70,29 @@ export class Fiber {
     return required.filter(name => !this.currentContext.has(name));
   }
 
+  /**
+   * The declared optional services that are currently unavailable in this fiber's scope. Optional dependencies never
+   * gate activation, so this is diagnostic only: it lets an observer watch an optional service appear and disappear.
+   */
+  missingOptional(): string[] {
+    const optional = this.definition.inject?.optional ?? [];
+    if (this.currentContext.disposed) return [...optional];
+    return optional.filter(name => !this.currentContext.has(name));
+  }
+
+  /**
+   * For each declared optional dependency, whether it is currently resolvable in this fiber's scope. Optional
+   * dependencies never gate activation (unlike `required`); this exposes their state so diagnostics (and the host
+   * dump) can observe them appearing and disappearing. Once the context is gone every entry is `false`.
+   */
+  get optionalAvailable(): Record<string, boolean> {
+    const optional = this.definition.inject?.optional ?? [];
+    const live = !this.currentContext.disposed;
+    const available: Record<string, boolean> = {};
+    for (const name of optional) available[name] = live ? this.currentContext.has(name) : false;
+    return available;
+  }
+
   /** Runs `apply` on a satisfied fiber. A throw rolls the context back and records `error` (or rethrows if fatal). */
   async activate(): Promise<void> {
     this.currentState = "loading";

@@ -1,7 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 import { deepMerge, isPlainObject } from "./object";
-import type { ModuleResolver, PluginDefinition } from "./plugin";
+import {
+  normalizePlugin,
+  type ModuleResolver,
+  type PluginDefinition,
+  type PluginFunction,
+  type ResolveOptions
+} from "./plugin";
 
 /** The `libreoj` block of a plugin package's `package.json`. */
 export interface PluginManifest {
@@ -13,6 +20,8 @@ export interface PluginManifest {
 
 interface PackageJson {
   main?: string;
+  /** Node's module kind for the package: `"module"` makes its `.js` files (and the entry) ES modules. */
+  type?: string;
   libreoj?: PluginManifest;
 }
 
@@ -24,6 +33,12 @@ export interface NodeResolverOptions {
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/**
+ * A genuine dynamic `import()`. This package compiles to CommonJS, where TypeScript would downlevel a literal
+ * `import()` to `require`; building the import through `new Function` keeps it a native ESM load.
+ */
+const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<unknown>;
 
 /** Walks up from `start` to the nearest directory containing a `package.json`. */
 function findPackageJson(start: string): string | undefined {
@@ -38,11 +53,29 @@ function findPackageJson(start: string): string | undefined {
   }
 }
 
-/** Picks a `PluginDefinition` out of a module's exports: `plugin`, then `default`, then the export itself. */
-function extractDefinition(moduleExports: unknown): PluginDefinition | undefined {
-  if (!isPlainObject(moduleExports)) return undefined;
+/**
+ * Unwraps a module's exports to the value that describes the plugin: an ES module's named `plugin` export, then its
+ * `default` export, then the exports object itself (a CommonJS module's `module.exports` when neither is present).
+ */
+function unwrapExports(moduleExports: unknown): unknown {
+  if (moduleExports === null || (typeof moduleExports !== "object" && typeof moduleExports !== "function")) {
+    return moduleExports;
+  }
+  const record = moduleExports as { plugin?: unknown; default?: unknown };
+  if (record.plugin !== undefined) return record.plugin;
+  if (record.default !== undefined) return record.default;
+  return moduleExports;
+}
 
-  const candidate = moduleExports.plugin ?? moduleExports.default ?? moduleExports;
+/**
+ * Normalizes an unwrapped module export into a `PluginDefinition`: a function is lifted through `normalizePlugin`
+ * (using its own name, or `fallbackName` for an anonymous one), and an object must itself carry a name and apply.
+ * Returns `undefined` when the export is not a usable plugin.
+ */
+function toDefinition(candidate: unknown, fallbackName: string): PluginDefinition | undefined {
+  if (typeof candidate === "function") {
+    return normalizePlugin(candidate as PluginFunction, fallbackName);
+  }
   if (
     isPlainObject(candidate) &&
     typeof (candidate as { name?: unknown }).name === "string" &&
@@ -54,15 +87,17 @@ function extractDefinition(moduleExports: unknown): PluginDefinition | undefined
 }
 
 /**
- * A {@link ModuleResolver} that loads CommonJS plugin packages from the filesystem with `require`.
+ * A {@link ModuleResolver} that loads plugin packages from the filesystem. Lookup: a name starting with `.` or an
+ * absolute path is resolved from `baseDir`; anything else is resolved as a package from `baseDir`. The nearest
+ * `package.json` is read for the `libreoj` manifest (`libreoj.entry` selects the entry module, else `main`, else the
+ * resolved file; `libreoj.config` supplies default configuration below the plugin's own `config.defaults`) and for
+ * the module kind.
  *
- * Lookup: a name starting with `.` or an absolute path is resolved from `baseDir`; anything else is resolved as a
- * package from `baseDir`. The nearest `package.json` is read for the `libreoj` manifest: `libreoj.entry` selects the
- * entry module (otherwise `main`, otherwise the resolved file) and `libreoj.config` supplies default configuration
- * *below* the plugin's own `config.defaults`.
- *
- * M1 supports CommonJS entries only. An ESM entry (`import()`) is deferred: a plugin distributed as ESM would need an
- * asynchronous `resolve` and a `.mjs`/`"type": "module"` aware loader.
+ * A package is an ES module when its `package.json` sets `type: "module"` or its entry ends in `.mjs`/`.mts`; it is
+ * loaded with a real dynamic `import()` and `resolve` returns a promise. Otherwise the entry is loaded with `require`
+ * and `resolve` returns synchronously. Pass `{ fresh: true }` to evict the entry (and its `package.json`) from the
+ * CommonJS cache, so a file changed on disk is re-read; Node's ESM loader exposes no cache invalidation, so `fresh`
+ * has no effect on an ES module and a reloaded ESM plugin keeps its originally evaluated instance.
  */
 export class NodeResolver implements ModuleResolver {
   private readonly baseDir: string;
@@ -71,18 +106,38 @@ export class NodeResolver implements ModuleResolver {
     this.baseDir = options.baseDir ?? process.cwd();
   }
 
-  resolve(name: string): PluginDefinition {
+  resolve(name: string, options: ResolveOptions = {}): PluginDefinition | Promise<PluginDefinition> {
     const resolvedFile = this.resolveFile(name);
 
     let packageRoot = path.dirname(resolvedFile);
     let manifest: PackageJson = {};
-    const packageJsonPath = findPackageJson(packageRoot);
-    if (packageJsonPath) {
-      packageRoot = path.dirname(packageJsonPath);
-      manifest = JSON.parse(readFileSync(packageJsonPath, "utf8")) as PackageJson;
+    let packageJsonPath: string | undefined;
+    const found = findPackageJson(packageRoot);
+    if (found) {
+      packageJsonPath = found;
+      packageRoot = path.dirname(found);
+      manifest = JSON.parse(readFileSync(found, "utf8")) as PackageJson;
     }
 
     const entryFile = this.resolveEntry(name, resolvedFile, packageRoot, manifest);
+    const isEsm = manifest.type === "module" || /\.mjs$|\.mts$/.test(entryFile);
+
+    if (isEsm) return this.loadEsm(name, entryFile, manifest);
+    return this.loadCommonJs(name, entryFile, packageJsonPath, manifest, options);
+  }
+
+  /** Evicts the cached module instances for a CommonJS entry so it is re-read from disk. */
+  private loadCommonJs(
+    name: string,
+    entryFile: string,
+    packageJsonPath: string | undefined,
+    manifest: PackageJson,
+    options: ResolveOptions
+  ): PluginDefinition {
+    if (options.fresh) {
+      delete require.cache[entryFile];
+      if (packageJsonPath) delete require.cache[packageJsonPath];
+    }
 
     let moduleExports: unknown;
     try {
@@ -91,7 +146,24 @@ export class NodeResolver implements ModuleResolver {
       throw new Error(`Failed to load plugin "${name}" from "${entryFile}": ${describeError(error)}`);
     }
 
-    const definition = extractDefinition(moduleExports);
+    return this.finalize(name, entryFile, manifest, moduleExports);
+  }
+
+  /** Loads an ES module entry with a native dynamic `import()`, which no cache-invalidation API can bypass. */
+  private async loadEsm(name: string, entryFile: string, manifest: PackageJson): Promise<PluginDefinition> {
+    let moduleExports: unknown;
+    try {
+      moduleExports = await dynamicImport(pathToFileURL(entryFile).href);
+    } catch (error) {
+      throw new Error(`Failed to load plugin "${name}" from "${entryFile}": ${describeError(error)}`);
+    }
+
+    return this.finalize(name, entryFile, manifest, moduleExports);
+  }
+
+  /** Picks the definition out of the module exports and folds in the `libreoj.config` manifest layer. */
+  private finalize(name: string, entryFile: string, manifest: PackageJson, moduleExports: unknown): PluginDefinition {
+    const definition = toDefinition(unwrapExports(moduleExports), name);
     if (!definition) {
       throw new Error(
         `Plugin "${name}" at "${entryFile}" does not export a PluginDefinition ` +

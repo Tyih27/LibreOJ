@@ -325,6 +325,69 @@ test("a fiber emits dispose before its context is actually disposed, bubbling to
   await root.dispose();
 });
 
+test("optional dependencies never gate activation and their availability is observable", async () => {
+  const root = new Context();
+  const provider = root.fork("provider");
+  let applies = 0;
+  const plugin: PluginDefinition = {
+    name: "optional-consumer",
+    inject: { optional: ["extra"], required: [] },
+    apply() {
+      applies += 1;
+    }
+  };
+
+  const fiber = root.plugin(plugin);
+  await root.fibers.settle();
+
+  // A missing optional service still activates the plugin.
+  assert.equal(fiber.state, "active");
+  assert.equal(applies, 1);
+  assert.deepEqual(fiber.optionalAvailable, { extra: false });
+  assert.deepEqual(fiber.missingOptional(), ["extra"]);
+
+  // Its appearance and disappearance are observable without touching the activation state.
+  provider.set("extra", 1);
+  assert.deepEqual(fiber.optionalAvailable, { extra: true });
+  assert.deepEqual(fiber.missingOptional(), []);
+  assert.equal(fiber.state, "active");
+
+  await provider.dispose();
+  assert.deepEqual(fiber.optionalAvailable, { extra: false });
+  assert.equal(fiber.state, "active");
+
+  await root.dispose();
+});
+
+test("ctx.inject inside a plugin reruns as an optional-only service comes and goes", async () => {
+  const root = new Context();
+  const provider = root.fork("provider");
+  const runs: boolean[] = [];
+  const plugin: PluginDefinition = {
+    name: "optional-watcher",
+    // The plugin's own activation is not gated; the optional service is observed through ctx.inject instead.
+    inject: { optional: ["extra"] },
+    apply(ctx) {
+      ctx.inject(["extra"], () => {
+        runs.push(true);
+        return () => runs.push(false);
+      });
+    }
+  };
+
+  root.plugin(plugin);
+  await root.fibers.settle();
+  assert.deepEqual(runs, []);
+
+  provider.set("extra", 1);
+  assert.deepEqual(runs, [true]);
+
+  await provider.dispose();
+  assert.deepEqual(runs, [true, false]);
+
+  await root.dispose();
+});
+
 test("a dependency-driven deactivation emits dispose and a later reactivation emits ready again", async () => {
   const events: string[] = [];
   const consumer: PluginDefinition = {

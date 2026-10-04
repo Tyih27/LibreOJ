@@ -1,6 +1,10 @@
 import { deepMerge, isPlainObject } from "./object";
 
-export type PluginSource = "bundles" | "plugins";
+/**
+ * Where a resolved plugin entry came from. `bundles` and `plugins` are contributed by configuration layers;
+ * `runtime` marks a plugin mounted after `load` through `PluginHost.install`.
+ */
+export type PluginSource = "bundles" | "plugins" | "runtime";
 
 /** One layer of the configuration stack: a profile, a site patch file, or a CLI overlay. */
 export interface ConfigLayer {

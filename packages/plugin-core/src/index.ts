@@ -21,7 +21,8 @@ export type {
   PluginDefinition,
   PluginFunction,
   PluginInput,
-  PluginState
+  PluginState,
+  ResolveOptions
 } from "./plugin";
 export { composeLayers } from "./layers";
 export type { ComposeLayersOptions } from "./layers";

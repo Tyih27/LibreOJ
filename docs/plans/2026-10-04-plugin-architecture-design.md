@@ -266,3 +266,36 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - 全量 156 项测试通过；已覆盖函数式插件、`ctx.plugin`/`ctx.inject`（含回调抛错经内核 error 钩子上报并在依赖
   变化后重试）、`Service`、Fiber 门控、运行期 service 变化触发 `start`（`FiberManager.onSettled`）与配置层序。
 - 每个子任务仍走：实现（TDD）→ 规格审查 → 质量审查；子 Agent 必须使用 Realontext。
+
+## 13. M1.6：补齐剩余差距（P5–P7、P9；P8 不做）
+
+### P5｜`isolate` 隔离作用域（空间可组合性）
+- `ctx.isolate(names: string | string[]): Context` 返回**新的隔离边界 Context**。
+- 在 `iso` 及其后代内，对 `name ∈ names` 的 `set/get/has` 只作用于 `iso` 的隔离 scope：看不到外层同名注册，外层也看不到它；
+  未列入 `names` 的名字仍走祖先（树级全局）。两个 isolate 即使平级也互不共享。
+- 实现：`ServiceScope` 支持 **parent 链 + `isolated` 名字集**，`resolveScope(name)` 选择最近隔离该名字的作用域，否则回落到父/根。
+- `onServiceChange` 的变更通知沿 scope 链**向上传播**（隔离内的变更能被祖先订阅者观察）。
+- Fiber 门控按 fiber 所在 Context 的作用域解析（隔离内挂载的插件看到隔离服务）。
+- `dispose` 隔离 Context 即移除其隔离服务与子树。
+
+### P6｜运行期装卸插件
+- `PluginHost.install(name, config?)`：运行时经 `NodeResolver` 解析并 `root.plugin` 挂载 → settle → 对 active 调 `start`。
+- `PluginHost.uninstall(name)`：定位 fiber → `fiber.dispose()` → 移除记录 → settle（依赖方自动重算）。
+- `PluginHost.reload(name)`：uninstall + install；`NodeResolver` 提供 **fresh 解析**（清除模块缓存）以支撑热更新。
+- 说明：不实现文件监听式 HMR；提供的是可编程的运行期装卸原语。
+
+### P7｜`NodeResolver` 支持 ESM 入口
+- 识别 `package.json#type === "module"` 或 `.mjs` → 用**真正的动态 `import()`**（经 `new Function("s", "return import(s)")` 规避 TS 在 CommonJS 下对 `import()` 的降级）；
+  否则走 `require`。补 ESM fixture 与测试。
+
+### P9｜`inject.optional` 真实语义
+- optional 依赖**不门控激活**；其出现/消失应能被观察，并使插件内 `ctx.inject([...], cb)` 按服务变化重跑。
+- Fiber 暴露 optional 依赖的当前可用状态（供诊断/dump）。
+
+### P8｜Service 拦截 / trait：明确不做
+- Cordis 的 Service trait/方法拦截对本项目无实际需要（我们的服务是普通对象，消费者直接调用即可）；
+  明确标记为**不做**并在此说明理由，避免为对齐而引入无收益的复杂度。
+
+### 出口条件
+- 既有 156 项测试保持通过；新增覆盖 isolate 可见性/隔离/传播、运行期 install/uninstall/reload、ESM fixture、optional 语义。
+- build / check-types / check-format 全绿；`dump-config` 端到端仍正确。

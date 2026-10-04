@@ -14,7 +14,11 @@ export interface PluginConfigSchema<T = Record<string, unknown>> {
   defaults?: Record<string, unknown>;
 }
 
-/** Service dependencies: `required` gates activation, `optional` is advisory only. */
+/**
+ * Service dependencies. `required` gates activation: the plugin stays `pending` until every required service is
+ * resolvable. `optional` never gates activation: it only declares services the plugin may observe, exposed through
+ * `Fiber.optionalAvailable` / `Fiber.missingOptional()` and reacted to with `ctx.inject`.
+ */
 export interface Inject {
   required?: string[];
   optional?: string[];
@@ -27,7 +31,7 @@ export interface Inject {
 export interface PluginDefinition<TConfig = Record<string, unknown>> {
   /** Unique id within a host, e.g. "@libreoj/http-nest". */
   name: string;
-  /** Service dependencies: `required` gates activation, `optional` is advisory only. */
+  /** Service dependencies: `required` gates activation, `optional` is declarative and never gates. */
   inject?: { required?: string[]; optional?: string[] };
   /** Service names this plugin registers, declared for diagnostics; the actual registration happens in `apply`. */
   provide?: string[];
@@ -73,9 +77,21 @@ export function normalizePlugin<C>(input: PluginInput<C>, fallbackName?: string)
   return input;
 }
 
-/** Turns a plugin name into its definition. The kernel is agnostic to how modules are loaded. */
+/** Options for {@link ModuleResolver.resolve}. */
+export interface ResolveOptions {
+  /**
+   * Load the module fresh, bypassing any module cache, so a definition changed on disk is picked up. Supported for
+   * CommonJS entries; a resolver may ignore it where the runtime offers no cache invalidation.
+   */
+  fresh?: boolean;
+}
+
+/**
+ * Turns a plugin name into its definition. The kernel is agnostic to how modules are loaded. Resolution is
+ * synchronous for in-memory resolvers and for CommonJS, and asynchronous when the entry is an ES module.
+ */
 export interface ModuleResolver {
-  resolve(name: string): PluginDefinition | Promise<PluginDefinition>;
+  resolve(name: string, options?: ResolveOptions): PluginDefinition | Promise<PluginDefinition>;
 }
 
 /**

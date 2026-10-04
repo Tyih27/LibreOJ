@@ -23,13 +23,14 @@ LibreOJ 的框架无关插件内核，对齐 Cordis / dsh 的"一切皆插件"�
 | `scope` | `string` | 作用域名，宿主中即插件名 |
 | `config` | `Record<string, unknown>` | 该插件生效配置（构造时浅拷贝） |
 | `disposed` | `boolean` | 是否已 dispose |
-| `fork` | `(scope, config?) => Context` | 创建子 Context，随父一起（且先于父）dispose |
-| `set` | `(name, value) => void` | 注册服务主方法：向树级 service scope 注册，撤销随本 Context；同名存活提供者重复注册抛错 |
+| `fork` | `(scope, config?) => Context` | 创建子 Context，随父一起（且先于父）dispose，复用父的 service scope |
+| `isolate` | `(names) => Context` | 创建隔离边界子 Context：所列名只用该边界的独立 scope，未列名仍树级全局 |
+| `set` | `(name, value) => void` | 注册服务主方法：注册到拥有该名字的 scope（未隔离即树级），撤销随本 Context；同一 scope 内同名存活提供者重复注册抛错 |
 | `provide` | `(name, value) => void` | `set` 的别名，保留兼容 |
-| `get<T>` | `(name) => T` | 解析 service，缺失抛错 |
+| `get<T>` | `(name) => T` | 解析拥有该名字的 scope 中的 service，缺失抛错 |
 | `tryGet<T>` | `(name) => T \| undefined` | 缺失返回 `undefined` |
 | `has` | `(name) => boolean` | 是否存在 |
-| `onServiceChange` | `(listener) => Disposer` | 订阅树级 service scope 的增删 |
+| `onServiceChange` | `(listener) => Disposer` | 订阅本 Context scope 链上的增删；隔离内的变更会向上传播到祖先（含根） |
 | `fibers` | `FiberManager` | 根 Context 拥有、全树共享的内核 fiber 管理器 |
 | `plugin` | `(input, config?) => Fiber` | 挂载插件（对象或函数形态），返回受门控的 fiber |
 | `inject` | `(deps, cb) => Disposer` | deps 全就绪时执行 `cb` 并登记其 disposer，依赖变化时撤销并重跑；`cb` 抛错时清除本次占位并经内核 error 钩子上报，后续依赖变化会重试 |
@@ -46,18 +47,25 @@ LibreOJ 的框架无关插件内核，对齐 Cordis / dsh 的"一切皆插件"�
 
 ### Service 作用域
 
-`ServiceScope`（`src/service.ts`）由**根 Context 唯一拥有**，整棵树共享同一个实例：
+`ServiceScope`（`src/service.ts`）是一棵 scope 树：根 Context 创建树级 scope，普通 `fork` 复用父 scope，
+`isolate` 则挂一个子 scope 并独占一组名字。
 
-- 任何 Context `set`（别名 `provide`）的 service 在整棵树内可见（祖先、后代、兄弟皆可），与挂载位置或顺序无关；
-- 同一棵树内**同名存活提供者只允许一个**，重复 `set` / `provide` 抛错；
+- 任何 Context `set`（别名 `provide`）的 service 默认在整棵树内可见（祖先、后代、兄弟皆可），与挂载位置或顺序无关；
+- 同一 scope 内**同名存活提供者只允许一个**，重复 `set` / `provide` 抛错；
 - 撤销登记在**提供者的 Context** 上，提供者卸载即移除该 service，并通知 `onServiceChange` 订阅者；
 - 不同根 Context 的 scope 相互隔离，不共享 service；
-- 按子树隔离（Cordis 的 `isolate`）暂未实现。
+- `ctx.isolate(names)` 返回隔离边界 Context `iso`：在 `iso` 及其后代内，对 `name ∈ names` 的
+  `set`/`get`/`tryGet`/`has` 只作用于该边界自己的 scope——看不到外层同名注册，外层也看不到它。未列入 `names`
+  的名字照常沿 scope 链解析（树级全局）。两个 isolate 即使平级、名字相同也互不共享；隔离沿子树传递
+  （`fork` / `ctx.plugin` 得到的子 Context 沿用同一隔离 scope）；dispose `iso` 会连同整棵子树移除其隔离服务。
+- `ServiceScope.resolveScope(name)` 选择最近的隔离该名字的 scope，否则回落到父/根；`onServiceChange` 沿 scope
+  链向上传播，因此隔离内发生的变更其祖先（含根，例如 `FiberManager`）也能收到通知。
 
 ### Service 基类
 
 `Service`（`src/service.ts`）是 Cordis 风格的服务基类：**构造即注册**——`super(ctx, name)` 内部调用
-`ctx.set(name, this)`，把实例绑定到树级 scope，撤销与 `ctx.set` 完全一致（随传入的 Context 一起吊销）。
+`ctx.set(name, this)`，把实例绑定到拥有该名字的 scope（默认树级，隔离内则为其隔离 scope），撤销与 `ctx.set`
+完全一致（随传入的 Context 一起吊销）。
 
 ```ts
 class Db extends Service {
@@ -66,6 +74,8 @@ class Db extends Service {
   }
 }
 ```
+
+内核**有意未实现** Service 拦截（interception）与 trait：它们要求内核理解具体 service 的语义，会把"一切皆插件"的通用内核耦合到业务细节，因此留给具体插件通过 event / service 自行扩展。
 
 ### Fiber 与依赖门控（内核）
 
@@ -83,6 +93,9 @@ class Db extends Service {
 - `FiberManager` 承担 `failureMode`（`skip` / `fatal`）、`onError(name, error)` 与 `fatalError`；
   `fatal` 时记录首个错误并让等待方 reject。
 - `ctx.inject(deps, cb)` 是 service 级联的轻量形式：deps 变化时撤销 / 重跑 `cb` 登记的副作用。
+- `inject.optional` 不门控激活（缺失也 `active`）：`Fiber.optionalAvailable`（`Record<string, boolean>`）与
+  `Fiber.missingOptional()` 反映 optional 依赖当前是否可用，供诊断 / dump 观察其出现与消失；插件内可用
+  `ctx.inject` 对 optional service 的出现 / 消失重跑回调。
 - 子插件随挂载它的 Context 一起卸载。
 
 ### 事件语义
@@ -147,11 +160,13 @@ interface PluginDefinition<TConfig = Record<string, unknown>> {
 两者共用同一组字段，`PluginInput` 即是二者的联合。
 
 - `inject.required` 是**激活门控**：所列 service 未全部就绪前插件保持 `pending`，不调用 `apply`；`inject.optional`
-  仅作说明，不参与门控。
+  不参与门控（缺失也 `active`），仅声明插件可能观察的 service，可通过 `Fiber.optionalAvailable` /
+  `Fiber.missingOptional()` 查看，并在插件内用 `ctx.inject` 对 optional service 的出现 / 消失做出反应。
 - `provide` 是诊断用的声明，实际注册发生在 `apply` 中。
 - `config` 为可选的自身配置处理：`defaults` 是最低优先级层，`parse` 负责校验 / 归一化合并后的配置并可在非法时抛错。
-- 模块解析由注入的 `ModuleResolver` 完成（`resolve(name) => PluginDefinition`），内核不关心加载方式。
-  内置 `InlineResolver`（内存表，测试与 fixture 用）与 `NodeResolver`（文件系统，见下）。
+- 模块解析由注入的 `ModuleResolver` 完成（`resolve(name, options?) => PluginDefinition | Promise<PluginDefinition>`，
+  内核不关心加载方式）：`options.fresh` 请求绕过模块缓存，同步的 `InlineResolver`（内存表，测试与 fixture 用）忽略它，
+  内置 `NodeResolver`（文件系统，见下）按入口类型同步或异步返回，内核统一 `await`。
 
 `PluginState` 生命周期：`pending → loading → active → disposing → disposed`，`apply` / `start` 抛错进入 `error`。
 
@@ -162,8 +177,14 @@ interface PluginDefinition<TConfig = Record<string, unknown>> {
 - 以 `.` 开头或绝对路径的名称相对其 `baseDir`（默认 `process.cwd()`）解析，其它名称按包名从 `baseDir` 解析；
 - 读取最近的 `package.json` 的 `libreoj` manifest：`libreoj.entry` 指定入口模块（缺省回退到 `main`，再回退到解析到的文件）；
   `libreoj.config` 是最低的默认配置层，会被插件自身的 `config.defaults` 覆盖；
-- 从模块导出中依次取 `plugin`、`default`、模块本身作为 `PluginDefinition`；
-- 当前仅支持 CommonJS 入口（`require`）；ESM 入口的异步加载尚未实现。
+- 从模块导出中依次取 `plugin`、`default`、模块本身作为 `PluginDefinition`；导出是函数时经 `normalizePlugin` 归一
+  （匿名函数以 `resolve` 的名称兜底）；
+- 入口类型判定：`package.json#type === "module"` 或入口以 `.mjs` / `.mts` 结尾即 **ESM**，用真正的动态 `import()`
+  （经 `new Function("s", "return import(s)")` 规避 CommonJS 降级，规格化为 `pathToFileURL(entry).href`）异步加载，
+  `resolve` 返回 promise；否则走 `require` 同步返回；
+- `resolve(name, { fresh: true })` 会从 `require.cache` 清除该入口及其 `package.json`，使改动过的 CommonJS 文件被重新
+  读取（支撑 `PluginHost.reload`）；Node 的 ESM 加载器没有缓存失效接口，故 `fresh` 对 ESM 无效，重载后的 ESM 插件
+  仍是首次求值的实例（已在源码注释说明）。
 
 ### 依赖门控与 start
 
@@ -191,6 +212,19 @@ interface PluginDefinition<TConfig = Record<string, unknown>> {
 可选 `onError(name, error)` 在每个不同错误对象上至多回调一次。宿主还提供 `plugins`、`fatalError`、`root` 与
 `load(layers)` / `reconcile()` / `dispose()` / `dumpConfig()`。
 
+### 运行期装卸
+
+`PluginHost` 在 `load` 之后提供可编程的装卸原语（不做文件监听式 HMR），三者都要求已 `load` 且未 dispose，否则抛错：
+
+- `install(name, config?): Promise<Fiber>`：经 resolver 解析 → `root.plugin` 挂载 → settle 到不动点（active 且本激活
+  周期内未 start 的 fiber 会 `start`）→ 返回 fiber。插件登记进 `plugins` / `dumpConfig`（新条目 `source: "runtime"`）；
+  重复安装同名抛错。
+- `uninstall(name): Promise<void>`：移除记录与解析条目 → `fiber.dispose()`（吊销其 service，依赖方自动 deactivate /
+  回到 `pending`）→ settle；`plugins` 与 `dumpConfig` 不再列出该插件。未安装的名字抛错。
+- `reload(name): Promise<Fiber>`：`uninstall` + fresh `install`，保留原配置与 `source`，用于改代码后热更新。
+- `install` 触发的 `apply` / `start` 失败模式与 `load` 一致（`skip` 记录 `error` 并不 reject，`fatal` reject 并记录
+  `fatalError`）。
+
 ## 配置分层
 
 `ConfigLayer`（`src/config.ts`）是一层配置：`name?` / `bundles?` / `plugins?` / `config?` / `patch?`。
@@ -208,7 +242,8 @@ interface PluginDefinition<TConfig = Record<string, unknown>> {
 被禁用的条目仍保留在解析结果中，便于 dump 报告。指向从未被任何层注册的插件、或值不是映射的 `config` / `patch`
 条目不会被静默丢弃，而是记入 `warnings`。
 
-`ResolvedPlugin` 字段：`name` / `source` / `config` / `disabled`。注意本地插件（`plugins` 中的路径）的 `name`
+`ResolvedPlugin` 字段：`name` / `source` / `config` / `disabled`；`source` 为 `"bundles"` / `"plugins"`（配置层来源）
+或 `"runtime"`（`PluginHost.install` 运行期挂载）。注意本地插件（`plugins` 中的路径）的 `name`
 就是 profile 里写的那个条目字符串（例如 `"./provides"`），而非插件定义自身的 `name`。
 
 `composeLayers({ profile, homePatchFile?, patches? })`（`src/layers.ts`）是 CLI 与各 loader **共用**的层序组装，
@@ -292,6 +327,9 @@ profile 中的相对插件路径以 profile 文件所在目录为基准解析，
 - `fixtures/demo/provides`（导出 `module.exports.plugin`）在 `apply` 中 `ctx.provide("greeting", "hello")`；
 - `fixtures/demo/consumes`（导出 `module.exports.default`）声明 `inject.required: ["greeting"]`，就绪后
   `ctx.get("greeting")` 并二次提供 `consumes.greeting`。
+
+`fixtures/esm-plugin` 是一个最小 ESM 包（`package.json` 的 `type: "module"`，`index.mjs` 用 `export const plugin`
+导出定义），用于验证 ESM 入口解析。
 
 `fixtures/demo/profile.yaml` 还列出一个从未解析的 bundle `@fixture/disabled-plugin`，并在 `patch` 里
 `disabled: true`，用于演示禁用条目的 dump。构建后 dump 整棵树：

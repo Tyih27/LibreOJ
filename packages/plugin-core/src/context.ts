@@ -10,10 +10,11 @@ import { RegistryCell, ReversibleRegistry } from "./registry";
  * A layered runtime handle. A context owns event listeners, effects, child contexts, and reversible registries; all of
  * them are torn down in reverse when the context is disposed.
  *
- * - Services live in one `ServiceScope` shared by the whole tree: the root creates it and every descendant reuses it,
- *   so `provide` from any context is visible to every context in the tree (including siblings) and lookup never walks
- *   the parent chain. Duplicate live `provide` of a name anywhere in the tree throws. The scope is cleared when the
- *   root is disposed; an ancestor/descendant split (`isolate`) is not implemented, though `fork` keeps the parent link.
+ * - Services live in a `ServiceScope`: the root creates the tree-wide scope and every descendant reuses it, so
+ *   `provide` from any context is visible to every context in the tree (including siblings) and lookup never walks the
+ *   parent chain. `isolate(names)` instead forks a context that owns a fresh child scope for those names, so an
+ *   isolated name is invisible on both sides of the boundary while every other name stays tree-global. Duplicate live
+ *   `provide` of a name in the same scope throws. The root scope is cleared when the root is disposed.
  * - `emit` bubbles upward only: the deepest context's listeners run first, then each ancestor's.
  * - `registry` returns a handle bound to this context over a namespace's shared cell; the cell itself is always
  *   created on and owned by the root context, so the whole tree shares one store.
@@ -32,12 +33,17 @@ export class Context {
   private fiberManager: FiberManager | null = null;
   private isDisposed = false;
 
-  constructor(parent: Context | null = null, scope = "root", config: Record<string, unknown> = {}) {
+  constructor(
+    parent: Context | null = null,
+    scope = "root",
+    config: Record<string, unknown> = {},
+    serviceScope?: ServiceScope
+  ) {
     this.parent = parent;
     this.scope = scope;
     this.config = { ...config };
-    // The root owns the tree's service scope; every descendant reuses its parent's.
-    this.serviceScope = parent ? parent.serviceScope : new ServiceScope();
+    // A fork reuses its parent's scope; `isolate` supplies a fresh scope that owns the isolated names.
+    this.serviceScope = serviceScope ?? (parent ? parent.serviceScope : new ServiceScope());
   }
 
   get disposed(): boolean {
@@ -48,6 +54,21 @@ export class Context {
   fork(scope: string, config: Record<string, unknown> = {}): Context {
     this.assertActive();
     const child = new Context(this, scope, config);
+    this.children.push(child);
+    return child;
+  }
+
+  /**
+   * Creates a child context that owns a fresh service scope isolating `names`. Within it and its descendants, `set`,
+   * `get`, `tryGet`, and `has` for an isolated name use only that scope: outer registrations of the same name are
+   * invisible, and the isolated registration is invisible outside. Names not listed keep their tree-global behavior.
+   * Everything forked from the returned context (including plugin contexts) shares the isolated scope, and the whole
+   * boundary is torn down with it. Independent isolate calls never share storage, even for the same names.
+   */
+  isolate(names: string | string[]): Context {
+    this.assertActive();
+    const isolated = typeof names === "string" ? [names] : names;
+    const child = new Context(this, `${this.scope}/isolate`, {}, new ServiceScope(this.serviceScope, isolated));
     this.children.push(child);
     return child;
   }
@@ -92,10 +113,10 @@ export class Context {
   }
 
   /**
-   * Runs `cb` while every name in `deps` is present in the tree-wide scope, and registers the disposer it returns.
-   * When the set of available dependencies changes so that it is no longer satisfied, `cb`'s registration is undone;
-   * when it is satisfied again, `cb` runs again. Both the dependency subscription and the current registration are
-   * revoked when this context is disposed (or when the returned disposer is called).
+   * Runs `cb` while every name in `deps` is resolvable in the scope it belongs to, and registers the disposer it
+   * returns. When the set of available dependencies changes so that it is no longer satisfied, `cb`'s registration is
+   * undone; when it is satisfied again, `cb` runs again. Both the dependency subscription and the current registration
+   * are revoked when this context is disposed (or when the returned disposer is called).
    */
   inject(deps: string[], cb: () => void | Disposer): Disposer {
     this.assertActive();
@@ -144,21 +165,22 @@ export class Context {
   }
 
   /**
-   * Registers a service in the tree-wide scope, visible to every context in the tree. A duplicate live name anywhere
-   * in the tree is rejected. The binding is revoked when this context is disposed. This is the primary registration
-   * method; `provide` is an alias kept for compatibility.
+   * Registers a service in the scope that owns `name`: normally the tree-wide scope, visible to every context in the
+   * tree; or this context's isolated scope when `name` is isolated here. A duplicate live name in that scope is
+   * rejected. The binding is revoked when this context is disposed. This is the primary registration method;
+   * `provide` is an alias kept for compatibility.
    */
   set(name: string, value: unknown): void {
     this.assertActive();
     this.stack.add(this.serviceScope.provide(name, value));
   }
 
-  /** Alias of `set`, registering a service in the tree-wide scope. */
+  /** Alias of `set`, registering a service in the scope that owns its name. */
   provide(name: string, value: unknown): void {
     this.set(name, value);
   }
 
-  /** Resolves a service from the tree-wide scope, throwing when it is not provided. */
+  /** Resolves a service from the scope that owns `name`, throwing when it is not provided there. */
   get<T = unknown>(name: string): T {
     this.assertActive();
     if (this.serviceScope.has(name)) return this.serviceScope.get(name) as T;
@@ -176,13 +198,21 @@ export class Context {
   }
 
   /**
-   * Subscribes to changes in the tree-wide service scope: `listener` runs whenever any context in the tree provides
-   * or removes a service. The returned disposer detaches it, and it is automatically revoked when this context is
-   * disposed, so callers never need to reach into the scope directly.
+   * Subscribes to changes in the coalesced service scope: `listener` runs whenever any context in this context's
+   * scope chain provides or removes a service. It subscribes up the chain, so a change inside an isolated subtree
+   * reaches ancestor subscribers, and a non-isolated dependency resolved from an ancestor wakes an isolate-local
+   * subscriber. `ServiceScope.notify` deduplicates, so the listener still fires once per change. The returned disposer
+   * detaches it, and it is automatically revoked when this context is disposed.
    */
   onServiceChange(listener: ServiceChangeListener): Disposer {
     this.assertActive();
-    return this.stack.add(this.serviceScope.onChange(listener));
+    const detachers: Disposer[] = [];
+    for (let scope: ServiceScope | null = this.serviceScope; scope; scope = scope.parent) {
+      detachers.push(scope.onChange(listener));
+    }
+    return this.stack.add(() => {
+      for (const detach of detachers) detach();
+    });
   }
 
   /** Registers a normal-tier listener whose lifetime is bound to this context. */
