@@ -106,9 +106,15 @@ test("events bubble to ancestors, deepest listener first, and never downward", (
   const child = root.fork("child");
   const grandchild = child.fork("grandchild");
   const order: string[] = [];
-  root.on("ping", () => order.push("root"));
-  child.on("ping", () => order.push("child"));
-  grandchild.on("ping", () => order.push("grandchild"));
+  root.on("ping", () => {
+    order.push("root");
+  });
+  child.on("ping", () => {
+    order.push("child");
+  });
+  grandchild.on("ping", () => {
+    order.push("grandchild");
+  });
 
   grandchild.emit("ping");
   assert.deepEqual(order, ["grandchild", "child", "root"]);
@@ -125,8 +131,12 @@ test("events bubble to ancestors, deepest listener first, and never downward", (
 test("listeners on one context run in registration order and receive the emit arguments", () => {
   const ctx = new Context();
   const seen: unknown[][] = [];
-  ctx.on("e", (...args) => seen.push(["first", ...args]));
-  ctx.on("e", (...args) => seen.push(["second", ...args]));
+  ctx.on("e", (...args) => {
+    seen.push(["first", ...args]);
+  });
+  ctx.on("e", (...args) => {
+    seen.push(["second", ...args]);
+  });
 
   ctx.emit("e", 1, "two");
 
@@ -148,6 +158,87 @@ test("the disposer returned by on removes the listener", () => {
   off();
   ctx.emit("e");
   assert.equal(count, 1);
+});
+
+test("priority tiers run in order within each context, deepest context first", () => {
+  const root = new Context();
+  const child = root.fork("child");
+  const order: string[] = [];
+  const record = (label: string): void => {
+    order.push(label);
+  };
+  root.after("e", () => record("root-after"));
+  root.on("e", () => record("root-on"));
+  root.before("e", () => record("root-before"));
+  child.after("e", () => record("child-after"));
+  child.on("e", () => record("child-on"));
+  child.before("e", () => record("child-before"));
+
+  child.emit("e");
+
+  assert.deepEqual(order, ["child-before", "child-on", "child-after", "root-before", "root-on", "root-after"]);
+});
+
+test("a bail value stops remaining tiers, all outer ancestors, and is returned by emit", () => {
+  const root = new Context();
+  const child = root.fork("child");
+  const order: string[] = [];
+  root.on("e", () => {
+    order.push("root-on");
+  });
+  child.after("e", () => {
+    order.push("child-after");
+  });
+  child.on("e", () => {
+    order.push("child-on");
+    return "child-stop";
+  });
+
+  const result = child.emit("e");
+
+  assert.equal(result, "child-stop");
+  assert.deepEqual(order, ["child-on"]);
+});
+
+test("when no listener bails, emit returns undefined after running every tier in every context", () => {
+  const root = new Context();
+  const child = root.fork("child");
+  const order: string[] = [];
+  root.after("e", () => {
+    order.push("root-after");
+  });
+  child.before("e", () => {
+    order.push("child-before");
+  });
+
+  const result = child.emit("e");
+
+  assert.equal(result, undefined);
+  assert.deepEqual(order, ["child-before", "root-after"]);
+});
+
+test("once and the before/after tiers are bound to the context and can be removed early", () => {
+  const ctx = new Context();
+  const order: string[] = [];
+  let once = 0;
+  ctx.once("e", () => {
+    once++;
+  });
+  const record = (label: string): void => {
+    order.push(label);
+  };
+  ctx.before("e", () => record("before"));
+  const offAfter = ctx.after("e", () => record("after"));
+
+  ctx.emit("e");
+  ctx.emit("e");
+  assert.equal(once, 1);
+  assert.deepEqual(order, ["before", "after", "before", "after"]);
+
+  offAfter();
+  order.length = 0;
+  ctx.emit("e");
+  assert.deepEqual(order, ["before"]);
 });
 
 test("effect runs immediately and its returned disposer runs once", () => {
@@ -253,6 +344,7 @@ test("using a disposed context throws", async () => {
   assert.throws(() => ctx.effect(() => {}));
   assert.throws(() => ctx.fork("child"));
   assert.throws(() => ctx.registry("ns"));
+  assert.throws(() => ctx.fibers);
 });
 
 test("a child registry is a caller-bound handle over the ancestor's shared storage", () => {

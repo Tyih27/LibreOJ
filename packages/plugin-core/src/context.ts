@@ -1,5 +1,8 @@
 import { DisposableStack, type Disposer } from "./disposable";
 import { EventBus, type Listener } from "./events";
+import { Fiber, FiberManager } from "./fiber";
+import { deepMerge, isPlainObject } from "./object";
+import { normalizePlugin, type PluginInput } from "./plugin";
 import { ServiceScope, type ServiceChangeListener } from "./service";
 import { RegistryCell, ReversibleRegistry } from "./registry";
 
@@ -26,6 +29,7 @@ export class Context {
   private readonly children: Context[] = [];
   private readonly registries = new Map<string, ReversibleRegistry<unknown>>();
   private readonly cells = new Map<string, RegistryCell<unknown>>();
+  private fiberManager: FiberManager | null = null;
   private isDisposed = false;
 
   constructor(parent: Context | null = null, scope = "root", config: Record<string, unknown> = {}) {
@@ -49,12 +53,109 @@ export class Context {
   }
 
   /**
-   * Registers a service in the tree-wide scope, visible to every context in the tree. A duplicate live name anywhere
-   * in the tree is rejected. The binding is revoked when this context is disposed.
+   * The kernel's fiber manager, owned by the root context and shared by the whole tree. It is created lazily on the
+   * root, so `ctx.plugin` works without a host while still giving every context one registry.
    */
-  provide(name: string, value: unknown): void {
+  get fibers(): FiberManager {
+    this.assertActive();
+    const root = this.rootContext();
+    if (!root.fiberManager) root.fiberManager = new FiberManager(root);
+    return root.fiberManager;
+  }
+
+  /**
+   * Mounts a plugin as a {@link Fiber} under this context and returns it. The definition's `config.defaults` are
+   * overlaid with `config`, then validated by `config.parse`; the fiber receives a child context forked from this one.
+   * The kernel gates activation on `inject.required` and reconciles asynchronously, so a gated plugin may still be
+   * `pending` when this returns.
+   */
+  plugin(input: PluginInput, config?: unknown): Fiber {
+    this.assertActive();
+    const definition = normalizePlugin(input);
+    const overlay = isPlainObject(config) ? config : {};
+    const merged = deepMerge(definition.config?.defaults ?? {}, overlay);
+    const finalConfig = (definition.config?.parse ? definition.config.parse(merged) : merged) as Record<
+      string,
+      unknown
+    >;
+
+    const manager = this.fibers;
+    const context = this.fork(definition.name, finalConfig);
+    const fiber = new Fiber(manager, this, context, definition, finalConfig);
+    manager.register(fiber);
+
+    // A sub-plugin lives exactly as long as the context that mounted it.
+    this.effect(() => () => {
+      void fiber.dispose();
+    });
+    return fiber;
+  }
+
+  /**
+   * Runs `cb` while every name in `deps` is present in the tree-wide scope, and registers the disposer it returns.
+   * When the set of available dependencies changes so that it is no longer satisfied, `cb`'s registration is undone;
+   * when it is satisfied again, `cb` runs again. Both the dependency subscription and the current registration are
+   * revoked when this context is disposed (or when the returned disposer is called).
+   */
+  inject(deps: string[], cb: () => void | Disposer): Disposer {
+    this.assertActive();
+    const required = [...deps];
+    let current: Disposer | null = null;
+    let active = true;
+
+    const evaluate = (): void => {
+      if (!active) return;
+      const ready = required.every(name => this.serviceScope.has(name));
+      if (ready && !current) {
+        // A placeholder blocks a re-entrant service change (raised from inside `cb`) from running it twice.
+        current = () => {};
+        let result: void | Disposer;
+        try {
+          result = cb();
+        } catch (error) {
+          // Drop the placeholder so the next dependency change retries `cb`, and report the failure through the
+          // kernel's error hook: the service scope swallows listener exceptions, so failing silently is not an option.
+          current = null;
+          this.fibers.reportError(this.scope, error);
+          return;
+        }
+        if (typeof result === "function") current = result;
+      } else if (!ready && current) {
+        const undo = current;
+        current = null;
+        undo();
+      }
+    };
+
+    const off = this.onServiceChange(evaluate);
+    const detach = (): void => {
+      if (!active) return;
+      active = false;
+      off();
+      if (current) {
+        const undo = current;
+        current = null;
+        undo();
+      }
+    };
+    const registered = this.stack.add(detach);
+    evaluate();
+    return registered;
+  }
+
+  /**
+   * Registers a service in the tree-wide scope, visible to every context in the tree. A duplicate live name anywhere
+   * in the tree is rejected. The binding is revoked when this context is disposed. This is the primary registration
+   * method; `provide` is an alias kept for compatibility.
+   */
+  set(name: string, value: unknown): void {
     this.assertActive();
     this.stack.add(this.serviceScope.provide(name, value));
+  }
+
+  /** Alias of `set`, registering a service in the tree-wide scope. */
+  provide(name: string, value: unknown): void {
+    this.set(name, value);
   }
 
   /** Resolves a service from the tree-wide scope, throwing when it is not provided. */
@@ -84,18 +185,42 @@ export class Context {
     return this.stack.add(this.serviceScope.onChange(listener));
   }
 
-  /** Registers a listener whose lifetime is bound to this context. */
+  /** Registers a normal-tier listener whose lifetime is bound to this context. */
   on(event: string, listener: Listener): Disposer {
     this.assertActive();
     return this.stack.add(this.events.on(event, listener));
   }
 
-  /** Emits an event to this context's listeners, then to each ancestor's, deepest first. */
-  emit(event: string, ...args: unknown[]): void {
+  /** Registers a `before`-tier listener: it runs before this context's normal listeners for the event. */
+  before(event: string, listener: Listener): Disposer {
+    this.assertActive();
+    return this.stack.add(this.events.before(event, listener));
+  }
+
+  /** Registers an `after`-tier listener: it runs after this context's normal listeners for the event. */
+  after(event: string, listener: Listener): Disposer {
+    this.assertActive();
+    return this.stack.add(this.events.after(event, listener));
+  }
+
+  /** Registers a listener that is removed as soon as it first fires. Its lifetime is bound to this context. */
+  once(event: string, listener: Listener): Disposer {
+    this.assertActive();
+    return this.stack.add(this.events.once(event, listener));
+  }
+
+  /**
+   * Emits an event to this context's listeners, then to each ancestor's, deepest context first. Within one context the
+   * `before` tier runs first, then the normal listeners, then `after`. The first listener to return a value other than
+   * `undefined` bails: no later listener (including in an ancestor context) runs, and its value is returned.
+   */
+  emit(event: string, ...args: unknown[]): unknown {
     this.assertActive();
     for (let ctx: Context | null = this; ctx; ctx = ctx.parent) {
-      ctx.events.emit(event, ...args);
+      const result = ctx.events.emit(event, ...args);
+      if (result !== undefined) return result;
     }
+    return undefined;
   }
 
   /** Runs `fn` immediately and registers the disposer it returns (if any) for teardown. */

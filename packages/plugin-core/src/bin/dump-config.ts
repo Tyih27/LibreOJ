@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import * as path from "node:path";
 import { PluginHost } from "../host";
+import { composeLayers } from "../layers";
 import { NodeResolver } from "../node-resolver";
-import { loadPatchFile, loadProfileFile } from "../profile";
 
 const USAGE = "Usage: libreoj-dump-config <profile.yaml> [--patch <patch.yaml>]...";
 
@@ -40,11 +40,13 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Resolves a profile (plus any `--patch` overlays), loads its plugin tree, and writes the dump to stdout. Returns the
- * process exit code: 0 on success, 1 when arguments, a file, or plugin resolution fails.
+ * Resolves a profile (plus the `LIBREOJ_PATCH_FILE` home patch and any `--patch` overlays), loads its plugin tree, and
+ * writes the dump to stdout. Returns the process exit code: 0 on success, 1 when arguments, a file, or plugin
+ * resolution fails.
  *
- * Relative plugin paths in the profile are resolved from the profile file's directory, so a profile and its local
- * plugins travel together.
+ * Layer order is owned by {@link composeLayers}: profile chain, then the `LIBREOJ_PATCH_FILE` home patch (when the
+ * variable is set), then each `--patch` file in order. Relative plugin paths in the profile are resolved from the
+ * profile file's directory, so a profile and its local plugins travel together.
  */
 export async function main(argv: string[]): Promise<number> {
   let parsed: Arguments;
@@ -62,10 +64,11 @@ export async function main(argv: string[]): Promise<number> {
   });
 
   try {
-    const layers = [
-      ...loadProfileFile(profilePath),
-      ...parsed.patches.map(patch => loadPatchFile(path.resolve(patch)))
-    ];
+    const layers = composeLayers({
+      profile: profilePath,
+      homePatchFile: process.env.LIBREOJ_PATCH_FILE,
+      patches: parsed.patches
+    });
     await host.load(layers);
     const output = host.dumpConfig();
     await host.dispose();

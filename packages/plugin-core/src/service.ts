@@ -1,5 +1,24 @@
 import type { Disposer } from "./disposable";
 
+/**
+ * The minimal context surface a `Service` needs to register itself. Declared structurally so the base class does not
+ * import `Context`, which would create a runtime cycle.
+ */
+interface ServiceContext {
+  set(name: string, value: unknown): void;
+}
+
+/**
+ * Cordis-style service base class. Constructing it registers `this` under `name` on the context, so subclasses are
+ * written as `class Db extends Service { constructor(ctx) { super(ctx, "db"); } }`. The binding is revoked by the
+ * context's disposal, exactly like `ctx.set`.
+ */
+export class Service {
+  constructor(ctx: ServiceContext, name: string) {
+    ctx.set(name, this);
+  }
+}
+
 /** Notified whenever a service is added to or removed from a scope. */
 export type ServiceChangeListener = () => void;
 

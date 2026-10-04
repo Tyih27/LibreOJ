@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
-import { Context, ServiceScope } from "./index";
+import { Context, Service, ServiceScope } from "./index";
 
 test("a rejected duplicate provide leaves the scope untouched and the original disposer still frees the name", () => {
   const scope = new ServiceScope();
@@ -76,4 +76,36 @@ test("Context.provide and Context.dispose drive the tree's ServiceScope notifica
   const other = new Context();
   other.provide("svc", 1);
   assert.equal(changes.length, 2);
+});
+
+test("a Service subclass registers itself on construction and is revoked with its context", async () => {
+  class Db extends Service {
+    readonly value = 1;
+    constructor(ctx: Context) {
+      super(ctx, "db");
+    }
+  }
+
+  const root = new Context();
+  const child = root.fork("child");
+  const db = new Db(child);
+
+  assert.equal(root.get("db"), db);
+  assert.throws(() => new Db(child), /already provided/);
+
+  await child.dispose();
+  assert.equal(root.has("db"), false);
+});
+
+test("Context.set behaves like provide: registers tree-wide, rejects duplicates, revokes on dispose", async () => {
+  const root = new Context();
+  const child = root.fork("child");
+
+  child.set("svc", 1);
+  assert.equal(root.get("svc"), 1);
+  assert.throws(() => root.set("svc", 2), /already provided/);
+  assert.throws(() => root.provide("svc", 3), /already provided/);
+
+  await child.dispose();
+  assert.equal(root.has("svc"), false);
 });

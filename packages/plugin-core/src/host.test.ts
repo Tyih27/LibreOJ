@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import { load } from "js-yaml";
-import { InlineResolver, PluginHost, type PluginDefinition } from "./index";
+import { InlineResolver, PluginHost, type PluginDefinition, type PluginRecord } from "./index";
 
 function stateOf(host: PluginHost, name: string): string | undefined {
   return host.plugins.find(record => record.name === name)?.state;
@@ -300,6 +300,39 @@ test("start may provide a service that activates and starts a dependent before l
   await host.dispose();
 });
 
+test("an externally reactivated plugin is started without an explicit reconcile", async () => {
+  let starts = 0;
+  let resolveStarted!: () => void;
+  const started = new Promise<void>(resolve => {
+    resolveStarted = resolve;
+  });
+  const a: PluginDefinition = {
+    name: "a",
+    inject: { required: ["gate"] },
+    apply() {},
+    start() {
+      starts += 1;
+      resolveStarted();
+    }
+  };
+
+  const host = new PluginHost({ resolver: new InlineResolver({ a }) });
+  await host.load([{ bundles: ["a"] }]);
+  assert.equal(stateOf(host, "a"), "pending");
+  assert.equal(starts, 0);
+
+  // A runtime service change activates "a" with no caller promise; the host must observe the kernel settle and run
+  // its start loop on its own. No manual `host.reconcile()` may be needed to mask the gap.
+  const gate = host.root.fork("gate");
+  gate.provide("gate", true);
+  await started;
+
+  assert.equal(stateOf(host, "a"), "active");
+  assert.equal(starts, 1);
+
+  await host.dispose();
+});
+
 test("start runs again after a plugin is deactivated and re-activated", async () => {
   const starts: string[] = [];
   const a: PluginDefinition = {
@@ -454,4 +487,24 @@ test("a plugin config schema supplies defaults under profile config and validate
 
   await host.dispose();
   await failing.dispose();
+});
+
+test("the plugins accessor returns a defensive copy of the load order", async () => {
+  const a: PluginDefinition = {
+    name: "a",
+    apply() {}
+  };
+
+  const host = new PluginHost({ resolver: new InlineResolver({ a }) });
+  await host.load([{ bundles: ["a"] }]);
+
+  const snapshot = host.plugins as PluginRecord[];
+  assert.notEqual(snapshot, host.plugins);
+  snapshot.length = 0;
+
+  // Mutating the returned array must not reach the host's internal records.
+  assert.equal(host.plugins.length, 1);
+  assert.equal(stateOf(host, "a"), "active");
+
+  await host.dispose();
 });

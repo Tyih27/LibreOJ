@@ -14,6 +14,12 @@ export interface PluginConfigSchema<T = Record<string, unknown>> {
   defaults?: Record<string, unknown>;
 }
 
+/** Service dependencies: `required` gates activation, `optional` is advisory only. */
+export interface Inject {
+  required?: string[];
+  optional?: string[];
+}
+
 /**
  * The static description of a plugin. `apply` registers the plugin's services and effects; `start` is called once,
  * after every plugin that could be activated has settled, for work that needs the whole tree registered first.
@@ -28,6 +34,43 @@ export interface PluginDefinition<TConfig = Record<string, unknown>> {
   config?: PluginConfigSchema<TConfig>;
   apply(ctx: Context, config: TConfig): void | Promise<void>;
   start?(ctx: Context, config: TConfig): void | Promise<void>;
+}
+
+/**
+ * Cordis-style plugin: a callable that registers services/effects, optionally carrying the same static metadata as a
+ * `PluginDefinition` (`name`/`inject`/`provide`/`Config`/`start`). `normalizePlugin` lifts it into a definition.
+ */
+export type PluginFunction<C = Record<string, unknown>> = ((ctx: Context, config: C) => void | Promise<void>) & {
+  name?: string;
+  inject?: Inject;
+  provide?: string[];
+  Config?: PluginConfigSchema<C>;
+  start?: (ctx: Context, config: C) => void | Promise<void>;
+};
+
+/** Either a callable plugin or an explicit definition; both normalize to a `PluginDefinition`. */
+export type PluginInput<C = Record<string, unknown>> = PluginFunction<C> | PluginDefinition<C>;
+
+/**
+ * Normalizes a plugin input into a `PluginDefinition`. A function keeps its own name, or the fallback when anonymous;
+ * one of the two must be present. An object is returned unchanged after validating its name.
+ */
+export function normalizePlugin<C>(input: PluginInput<C>, fallbackName?: string): PluginDefinition<C> {
+  if (typeof input === "function") {
+    const name = input.name || fallbackName;
+    if (!name) throw new Error("Plugin function must have a name, or a fallback name must be provided");
+    return {
+      name,
+      inject: input.inject,
+      provide: input.provide,
+      config: input.Config,
+      apply: input,
+      start: input.start
+    };
+  }
+
+  if (!input.name) throw new Error("Plugin must have a non-empty name");
+  return input;
 }
 
 /** Turns a plugin name into its definition. The kernel is agnostic to how modules are loaded. */

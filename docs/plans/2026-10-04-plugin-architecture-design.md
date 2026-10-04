@@ -235,3 +235,34 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **双概念并存期**（内核 vs NestJS）：靠"HTTP 是 seam"把 NestJS 圈在单个 Provider 内，避免长期双 DI。
 - **构建流水线**：新增包后同步 `pnpm-workspace.yaml`、根构建脚本与 CI 路径列表。
 - **开放项**：`plugins/*` 位置与"前端仅构建期"两项按推荐默认执行，如需调整请在 M2 前提出。
+
+## 12. M1.5：与 dsh 对齐补强（P1–P4）
+
+目标：在 M1 内核之上补齐 Cordis 的显性机制，使插件开发体验与结构更贴近 dsh。P5（`isolate`）延后。
+
+### P1｜Cordis 风格 API 面
+- 插件**两种形态**：函数 `type Plugin<C> = (ctx: Context, config: C) => void | Promise<void>`（可挂 `name`/`inject`/`provide`/`Config`/`start`）
+  与现有对象 `PluginDefinition`；`normalizePlugin(input)` 统一为对象形态。
+- `ctx.set(name, value)` 为注册服务主名（`provide` 保留为别名）；`ctx.get/tryGet/has` 不变。
+- `ctx.plugin(input, config?)` → `Fiber`（含 `name`/`state`/`context`/`dispose()`），支持**运行期挂载/卸载**；装载子插件。
+- `ctx.inject(deps, cb)`：deps 全部就绪时执行 `cb`，其登记的 effect 在 deps 变化时撤销并在重新就绪后重跑。
+- `Service` 基类：`class Db extends Service { constructor(ctx){ super(ctx, "db") } }`，构造即 `ctx.set(name, this)`，随 ctx 撤销。
+
+### P2｜依赖门控下沉内核（Fiber）
+- 每个已挂载插件 = 一个 `Fiber`，状态 `pending → loading → active → disposing → disposed`（异常 `error`），由内核维护。
+- 门控在内核：`inject.required` 未满足不 `apply`；满足后 active；依赖消失则 deactivate 回 pending；恢复后重新 apply。
+- `PluginHost` 退化为 loader：`resolveConfig` → `ctx.plugin` 逐个挂载 → 等待 settle → 对 active 调 `start`；`failureMode` 与 dump-config 保留。
+- 内核暴露 fiber 错误钩子，host 据此实现 `skip`/`fatal`。
+
+### P3｜事件语义
+- `ctx.on` 之外补 `ctx.once`、`ctx.before`、`ctx.after`；`emit` 支持 **bail**（监听器返回非 `undefined` 即中断并作为返回值）。
+- 标准生命周期事件：`ready`（插件激活后）、`dispose`（卸载前）。
+
+### P4｜配置层序完整化
+- 层序与 dsh 一致：profile bundles → profile patch → **site/home patch（`LIBREOJ_PATCH_FILE`）** → CLI `--patch`（可多次叠加）。
+- loader 与 CLI 走同一层序实现，避免两套。
+
+### 验证
+- 全量 156 项测试通过；已覆盖函数式插件、`ctx.plugin`/`ctx.inject`（含回调抛错经内核 error 钩子上报并在依赖
+  变化后重试）、`Service`、Fiber 门控、运行期 service 变化触发 `start`（`FiberManager.onSettled`）与配置层序。
+- 每个子任务仍走：实现（TDD）→ 规格审查 → 质量审查；子 Agent 必须使用 Realontext。

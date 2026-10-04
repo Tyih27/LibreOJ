@@ -7,13 +7,25 @@ export { dumpConfig } from "./dump";
 export type { PluginDumpState } from "./dump";
 export type { Listener } from "./events";
 export { EventBus } from "./events";
+export { Fiber, FiberManager } from "./fiber";
+export type { FiberManagerOptions } from "./fiber";
 export { PluginHost } from "./host";
 export type { PluginHostOptions, PluginRecord } from "./host";
 export { NodeResolver } from "./node-resolver";
 export type { NodeResolverOptions, PluginManifest } from "./node-resolver";
-export { InlineResolver } from "./plugin";
-export type { ModuleResolver, PluginConfigSchema, PluginDefinition, PluginState } from "./plugin";
+export { InlineResolver, normalizePlugin } from "./plugin";
+export type {
+  Inject,
+  ModuleResolver,
+  PluginConfigSchema,
+  PluginDefinition,
+  PluginFunction,
+  PluginInput,
+  PluginState
+} from "./plugin";
+export { composeLayers } from "./layers";
+export type { ComposeLayersOptions } from "./layers";
 export { loadPatchFile, loadProfileFile } from "./profile";
 export { ReversibleRegistry } from "./registry";
 export type { ServiceChangeListener } from "./service";
-export { ServiceScope } from "./service";
+export { Service, ServiceScope } from "./service";

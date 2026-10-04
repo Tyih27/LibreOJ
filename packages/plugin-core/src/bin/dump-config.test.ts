@@ -70,6 +70,31 @@ test("applies a --patch overlay on top of the profile", async () => {
   assert.equal(consumes?.config.flag, true);
 });
 
+test("applies LIBREOJ_PATCH_FILE as a home patch between the profile and --patch", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "plugin-core-dump-home-"));
+  const home = path.join(dir, "home.yaml");
+  const cli = path.join(dir, "cli.yaml");
+  writeFileSync(home, "config:\n  './consumes':\n    home: true\n    shared: home\n");
+  writeFileSync(cli, "config:\n  './consumes':\n    cli: true\n    shared: cli\n");
+
+  const previous = process.env.LIBREOJ_PATCH_FILE;
+  process.env.LIBREOJ_PATCH_FILE = home;
+  try {
+    const { code, stdout } = await run(["fixtures/demo/profile.yaml", "--patch", cli]);
+    assert.equal(code, 0);
+
+    const dump = load(stdout) as Dump;
+    const consumes = dump.plugins.find(plugin => plugin.name === "./consumes");
+    assert.equal(consumes?.config.home, true);
+    assert.equal(consumes?.config.cli, true);
+    // The CLI patch is applied after the home patch, so it wins the shared key.
+    assert.equal(consumes?.config.shared, "cli");
+  } finally {
+    if (previous === undefined) delete process.env.LIBREOJ_PATCH_FILE;
+    else process.env.LIBREOJ_PATCH_FILE = previous;
+  }
+});
+
 test("prints usage and returns non-zero when the profile is missing", async () => {
   const { code, stdout, stderr } = await run([]);
 
