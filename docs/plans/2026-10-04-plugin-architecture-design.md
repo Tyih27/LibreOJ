@@ -80,8 +80,8 @@ export class Context {
   readonly scope: string;                                  // 插件 id
   readonly config: Record<string, unknown>;                // 该插件生效配置
   plugin<T>(def: PluginDefinition<T>, config?: unknown): Scope;
-  provide(name: string, value: unknown): void;             // 注册 service，随 scope 撤销
-  get<T>(name: string): T;                                 // 缺失则抛错
+  provide(name: string, value: unknown): void;             // 注册到根 ServiceScope（全局），撤销随本 Context
+  get<T>(name: string): T;                                 // 从根 ServiceScope 解析；缺失则抛错
   tryGet<T>(name: string): T | undefined;
   has(name: string): boolean;
   inject(names: string[], cb: () => void | Disposable): void; // 依赖就绪时执行，变化时重跑
@@ -93,7 +93,10 @@ export class Context {
 }
 ```
 
-- **Service 容器分层**：子 Context 查找 service 时沿父链向上查找；`provide` 的作用域限于本 Context。
+- **Service 为根作用域全局可见（对齐 Cordis）**：同一棵插件树共享一个 `ServiceScope`（由根 Context 拥有），
+  任何插件 `provide` 的 service 同树内全局可解析，与树中位置/平级/顺序无关；`provide` 同名重复（同树内已有存活提供者）
+  抛错。撤销登记在提供者 Context，提供者卸载即移除该 service 并触发依赖方重算。按子树隔离（Cordis 的 `isolate`）暂不实现。
+  该语义由 Cordis 官方示例佐证：平级挂载的 `MyPlugin(inject:['database'])` 与 `DatabaseService` 可跨兄弟消费。
 - **Event 总线分层**：`emit` 依次触发本 Context 及祖先的监听器；监听器随 Context 自动撤销。
 - **可撤销注册**：`provide` / `on` / `effect` / `registry.set` / `plugin` 均返回或登记 disposer，`dispose` 时**逆序**执行。
 
@@ -127,7 +130,8 @@ patch:                         # 本 profile 的 patch 层
 ```
 
 - **叠加顺序**：`extends` 链（base 在前）→ 本 profile 的 bundles → 本 profile 的 patch → 站点 patch 文件
-  （`LIBREOJ_PATCH_FILE`）→ CLI `--patch` overlay。上层覆盖下层；`disabled: true` 移除条目。
+  （`LIBREOJ_PATCH_FILE`）→ CLI `--patch` overlay。上层覆盖下层；`disabled: true` 将该插件标记为禁用
+  （条目保留在解析结果中，便于 dump-config 报告与上层用 `disabled: false` 重新启用）。
 - **解析结果**：有序的 `ResolvedPlugin[]`（name / source / config / disabled）+ 最终配置树。
 - **`dump-config`**：把解析结果序列化为 YAML 打印，作为可观测性契约。
 - **模块解析解耦**：内核通过注入的 `ModuleResolver`（name → `PluginDefinition`）加载插件，测试中用内存 resolver，

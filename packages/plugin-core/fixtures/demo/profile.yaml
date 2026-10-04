@@ -1,0 +1,17 @@
+active: demo
+
+profiles:
+  demo:
+    name: demo
+    # Out-of-tree plugins are addressed by a path relative to this profile file,
+    # which the CLI passes to NodeResolver as its baseDir.
+    plugins:
+      - "./provides"
+      - "./consumes"
+    # A bundle name that is never resolved: the patch below disables it, and
+    # disabled entries are reported by dump-config without being loaded.
+    bundles:
+      - "@fixture/disabled-plugin"
+    patch:
+      "@fixture/disabled-plugin":
+        disabled: true

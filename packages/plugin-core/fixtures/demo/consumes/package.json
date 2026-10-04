@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/consumes",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.js",
+  "libreoj": {
+    "entry": "index.js"
+  }
+}

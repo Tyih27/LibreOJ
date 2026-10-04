@@ -1,0 +1,33 @@
+{
+  "name": "@libreoj/plugin-core",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "libreoj-dump-config": "dist/bin/dump-config.js"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "check-format": "prettier --check \"src/**/*.ts\" \"*.json\"",
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "format": "prettier --write \"src/**/*.ts\" \"*.json\"",
+    "test": "tsx --test src/*.test.ts src/bin/*.test.ts"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.5",
+    "@types/node": "18.6.3",
+    "prettier": "catalog:",
+    "tsx": "4.23.1",
+    "typescript": "^4.7.4"
+  }
+}
