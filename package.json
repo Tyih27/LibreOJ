@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "pnpm --recursive --sort --if-present run build",
-    "build:artifacts": "pnpm --filter '@libreoj/bootstrap-config...' --filter @libreoj/judge-protocol --sort run build",
+    "build:artifacts": "pnpm --filter '@libreoj/bootstrap-config...' --filter @libreoj/judge-protocol --filter '@libreoj/plugin-code-language...' --sort run build",
     "build:native": "pnpm --filter '@libreoj/judge...' --sort --if-present run build:native",
     "check": "pnpm build && pnpm --recursive --if-present run check-types && pnpm --recursive --if-present run lint && pnpm --recursive --if-present run check-format",
     "check-format": "pnpm --recursive --if-present run check-format",

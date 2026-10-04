@@ -8,6 +8,7 @@ import { AuthMiddleware } from "./auth/auth.middleware";
 import { MetricsMiddleware } from "./metrics/metrics.middleware";
 
 import { SharedModule } from "./shared.module";
+import { PluginModule } from "./plugin/plugin.module";
 import { RedisModule } from "./redis/redis.module";
 import { DatabaseModule } from "./database/database.module";
 import { UserModule } from "./user/user.module";
@@ -30,6 +31,7 @@ import { MetricsModule } from "./metrics/metrics.module";
 @Module({
   imports: [
     SharedModule,
+    PluginModule,
     forwardRef(() => DatabaseModule),
     forwardRef(() => RedisModule),
     forwardRef(() => UserModule),

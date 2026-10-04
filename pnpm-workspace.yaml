@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - plugins/*
   - infra/frontend-cdn
 
 catalog:

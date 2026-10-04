@@ -36,17 +36,6 @@ import { FileEntity } from "../../file/file.entity";
 import { FileService } from "../../file/file.service";
 
 import { CodeLanguage } from "../../code-language/code-language.type";
-import CompileAndRunOptionsCpp from "../../code-language/compile-and-run-options/cpp";
-import CompileAndRunOptionsC from "../../code-language/compile-and-run-options/c";
-import CompileAndRunOptionsJava from "../../code-language/compile-and-run-options/java";
-import CompileAndRunOptionsKotlin from "../../code-language/compile-and-run-options/kotlin";
-import CompileAndRunOptionsPascal from "../../code-language/compile-and-run-options/pascal";
-import CompileAndRunOptionsPython from "../../code-language/compile-and-run-options/python";
-import CompileAndRunOptionsRust from "../../code-language/compile-and-run-options/rust";
-import CompileAndRunOptionsGo from "../../code-language/compile-and-run-options/go";
-import CompileAndRunOptionsHaskell from "../../code-language/compile-and-run-options/haskell";
-import CompileAndRunOptionsCSharp from "../../code-language/compile-and-run-options/csharp";
-import CompileAndRunOptionsFSharp from "../../code-language/compile-and-run-options/fsharp";
 
 import { MigrationInterface } from "./migration.interface";
 import {
@@ -144,7 +133,7 @@ export function getLanguageAndOptions(
     case "cpp":
       return {
         language: CodeLanguage.Cpp,
-        compileAndRunOptions: <CompileAndRunOptionsCpp>{
+        compileAndRunOptions: {
           compiler: "g++",
           std: ensureCppAtLeast11 ? "c++11" : "c++03",
           O: "2",
@@ -154,7 +143,7 @@ export function getLanguageAndOptions(
     case "cpp11":
       return {
         language: CodeLanguage.Cpp,
-        compileAndRunOptions: <CompileAndRunOptionsCpp>{
+        compileAndRunOptions: {
           compiler: "g++",
           std: "c++11",
           O: "2",
@@ -164,7 +153,7 @@ export function getLanguageAndOptions(
     case "cpp17":
       return {
         language: CodeLanguage.Cpp,
-        compileAndRunOptions: <CompileAndRunOptionsCpp>{
+        compileAndRunOptions: {
           compiler: "g++",
           std: "c++17",
           O: "2",
@@ -174,7 +163,7 @@ export function getLanguageAndOptions(
     case "cpp-noilinux":
       return {
         language: CodeLanguage.Cpp,
-        compileAndRunOptions: <CompileAndRunOptionsCpp>{
+        compileAndRunOptions: {
           compiler: "g++",
           std: "c++03",
           O: "2",
@@ -184,7 +173,7 @@ export function getLanguageAndOptions(
     case "cpp11-noilinux":
       return {
         language: CodeLanguage.Cpp,
-        compileAndRunOptions: <CompileAndRunOptionsCpp>{
+        compileAndRunOptions: {
           compiler: "g++",
           std: "c++11",
           O: "2",
@@ -194,7 +183,7 @@ export function getLanguageAndOptions(
     case "cpp11-clang":
       return {
         language: CodeLanguage.Cpp,
-        compileAndRunOptions: <CompileAndRunOptionsCpp>{
+        compileAndRunOptions: {
           compiler: "clang++",
           std: "c++11",
           O: "2",
@@ -204,7 +193,7 @@ export function getLanguageAndOptions(
     case "cpp17-clang":
       return {
         language: CodeLanguage.Cpp,
-        compileAndRunOptions: <CompileAndRunOptionsCpp>{
+        compileAndRunOptions: {
           compiler: "clang++",
           std: "c++17",
           O: "2",
@@ -214,7 +203,7 @@ export function getLanguageAndOptions(
     case "c":
       return {
         language: CodeLanguage.C,
-        compileAndRunOptions: <CompileAndRunOptionsC>{
+        compileAndRunOptions: {
           compiler: "clang",
           std: "c99",
           O: "2",
@@ -224,7 +213,7 @@ export function getLanguageAndOptions(
     case "c-noilinux":
       return {
         language: CodeLanguage.C,
-        compileAndRunOptions: <CompileAndRunOptionsC>{
+        compileAndRunOptions: {
           compiler: "clang",
           std: "c99",
           O: "2",
@@ -234,40 +223,40 @@ export function getLanguageAndOptions(
     case "csharp":
       return {
         language: CodeLanguage.CSharp,
-        compileAndRunOptions: <CompileAndRunOptionsCSharp>{
+        compileAndRunOptions: {
           version: "7.3"
         }
       };
     case "java":
       return {
         language: CodeLanguage.Java,
-        compileAndRunOptions: <CompileAndRunOptionsJava>{}
+        compileAndRunOptions: {}
       };
     case "pascal":
       return {
         language: CodeLanguage.Pascal,
-        compileAndRunOptions: <CompileAndRunOptionsPascal>{
+        compileAndRunOptions: {
           optimize: "2"
         }
       };
     case "python2":
       return {
         language: CodeLanguage.Python,
-        compileAndRunOptions: <CompileAndRunOptionsPython>{
+        compileAndRunOptions: {
           version: "2.7"
         }
       };
     case "python3":
       return {
         language: CodeLanguage.Python,
-        compileAndRunOptions: <CompileAndRunOptionsPython>{
+        compileAndRunOptions: {
           version: "3.6"
         }
       };
     case "haskell":
       return {
         language: CodeLanguage.Haskell,
-        compileAndRunOptions: <CompileAndRunOptionsHaskell>{
+        compileAndRunOptions: {
           version: "2010"
         }
       };
@@ -285,7 +274,7 @@ export function getLanguageAndOptions(
   Logger.warn(`Unsupported language "${oldLanguageName}" while processing ${errorObjectDescription}. Default to C++.`);
   return {
     language: CodeLanguage.Cpp,
-    compileAndRunOptions: <CompileAndRunOptionsCpp>{
+    compileAndRunOptions: {
       compiler: "g++",
       std: "c++20",
       O: "2",
