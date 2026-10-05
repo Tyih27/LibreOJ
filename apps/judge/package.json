@@ -26,6 +26,8 @@
   },
   "dependencies": {
     "@libreoj/judge-protocol": "workspace:*",
+    "@libreoj/plugin-api": "workspace:*",
+    "@libreoj/plugin-core": "workspace:*",
     "@swc-node/core": "^1.9.0",
     "@swc-node/register": "^1.5.1",
     "@swc/core": "^1.2.242",

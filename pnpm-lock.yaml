@@ -408,6 +408,12 @@ importers:
       '@libreoj/judge-protocol':
         specifier: workspace:*
         version: link:../../packages/judge-protocol
+      '@libreoj/plugin-api':
+        specifier: workspace:*
+        version: link:../../packages/plugin-api
+      '@libreoj/plugin-core':
+        specifier: workspace:*
+        version: link:../../packages/plugin-core
       '@swc-node/core':
         specifier: ^1.9.0
         version: 1.9.0

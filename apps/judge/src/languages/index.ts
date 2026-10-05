@@ -1,6 +1,9 @@
+import { LANGUAGE_REGISTRY, type LanguageRegistry } from "@libreoj/plugin-api";
+
 import { CompilationConfig } from "../compile";
 import { FileDescriptor } from "../posixUtils";
 import { TaskIndependentSandboxConfig } from "../sandbox";
+import { getPluginHost } from "../plugin/plugin-host";
 
 export interface LanguageConfig<T> {
   /**
@@ -107,10 +110,32 @@ const langauges: Record<string, LanguageConfig<unknown>> = Object.fromEntries(
 /* eslint-enable import/no-dynamic-require */
 /* eslint-enable @typescript-eslint/no-var-requires */
 
-export default function getLanguage(language: string) {
+/**
+ * Internal lookup over the loaded language configs. The language-registry provider is backed by this function, so it
+ * reads the judge's own `LanguageConfig` objects without going through the seam (which would be circular: `getLanguage`
+ * below resolves the registry from it).
+ */
+export function getLanguageConfig(language: string): LanguageConfig<unknown> {
   const languageConfig = langauges[language];
   if (!languageConfig) {
     throw new Error(`Unsupported code language: ${language}`);
   }
   return languageConfig;
+}
+
+/** The supported language names, as a copy so the internal list cannot be mutated through the registry seam. */
+export function getLanguageNames(): string[] {
+  return [...languageList];
+}
+
+/**
+ * Resolves a language through the `languageRegistry` seam. The provider registered by the languages plugin is backed by
+ * {@link getLanguageConfig}, so this keeps the existing lookup behavior and error message while making the registry the
+ * single source of truth.
+ */
+export default function getLanguage(language: string): LanguageConfig<unknown> {
+  const registry = getPluginHost().root.get<LanguageRegistry>(LANGUAGE_REGISTRY);
+  // The provider hands back this module's own `LanguageConfig` objects; the seam re-declares the same shape in a
+  // separate workspace, so the judge-side type is recovered for the existing call sites.
+  return registry.getLanguage(language) as LanguageConfig<unknown>;
 }
