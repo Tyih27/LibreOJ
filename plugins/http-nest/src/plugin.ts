@@ -8,7 +8,8 @@ import { HttpNestServer, type HttpNestOptions } from "./server";
  *
  * `options.rootModule` lets the application hand its existing Nest root module to the server; routes and middleware
  * contributed by other plugins are mounted alongside it. The server listens when the host reaches its `start` phase,
- * once every contributing plugin has registered.
+ * once every contributing plugin has registered. With `options.listen === false` it instead only creates and
+ * configures the application, leaving the caller to bind later.
  */
 export function createHttpNestPlugin(options: HttpNestOptions = {}): PluginDefinition {
   return {
@@ -22,7 +23,9 @@ export function createHttpNestPlugin(options: HttpNestOptions = {}): PluginDefin
       });
     },
     async start(ctx) {
-      await ctx.get<HttpServer>(HTTP).listen();
+      const server = ctx.get<HttpServer>(HTTP);
+      if (options.listen === false) await (server as HttpNestServer).prepare();
+      else await server.listen();
     }
   };
 }

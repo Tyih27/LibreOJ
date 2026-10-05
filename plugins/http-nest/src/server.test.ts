@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { INestApplication } from "@nestjs/common";
+import type { NextFunction, Request, Response } from "express";
+
 import { HttpNestServer } from "./server";
 
 function url(server: HttpNestServer, path: string): string {
@@ -87,6 +90,40 @@ test("rejects registering routes after listen", async () => {
   await server.listen();
   try {
     assert.throws(() => server.route("GET", "/late", () => undefined), /after HttpServer\.listen/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("prepare creates and configures the application without binding, then listen binds it", async () => {
+  let configured: unknown = null;
+  const server = new HttpNestServer({
+    port: 0,
+    configureApp: app => {
+      configured = app;
+      (app as INestApplication).use((_request: Request, response: Response, next: NextFunction) => {
+        response.setHeader("x-configured", "1");
+        next();
+      });
+    }
+  });
+  server.route("GET", "/prepared", (_request, response) => {
+    response.body = "ok";
+  });
+
+  await server.prepare();
+  assert.equal(configured, server.application);
+  assert.ok(server.application, "prepare should expose the created application");
+  assert.equal(server.listening, false);
+  assert.equal(server.address, null);
+
+  await server.listen();
+  try {
+    assert.equal(server.listening, true);
+    const response = await fetch(url(server, "/prepared"));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-configured"), "1");
+    assert.equal(await response.text(), "ok");
   } finally {
     await server.close();
   }

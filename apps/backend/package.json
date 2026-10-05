@@ -32,6 +32,7 @@
     "@libreoj/plugin-api": "workspace:*",
     "@libreoj/plugin-code-language": "workspace:*",
     "@libreoj/plugin-core": "workspace:*",
+    "@libreoj/plugin-http-nest": "workspace:*",
     "@nestjs/axios": "^0.1.0",
     "@nestjs/common": "^9.0.7",
     "@nestjs/core": "^9.0.7",

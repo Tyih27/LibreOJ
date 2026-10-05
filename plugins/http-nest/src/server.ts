@@ -1,6 +1,6 @@
 import "reflect-metadata";
 
-import { Module, type INestApplication } from "@nestjs/common";
+import { Module, type INestApplication, type NestApplicationOptions } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { Router, type NextFunction, type Request, type Response } from "express";
 
@@ -22,6 +22,23 @@ export interface HttpNestOptions {
   rootModule?: unknown;
   host?: string;
   port?: number;
+  /**
+   * Called with the freshly created Nest application, after {@link NestFactory.create} and before the contributed
+   * routes are mounted and the port is bound. Lets an application install its global prefix, filters, pipes or
+   * Swagger exactly as it would on a directly created application.
+   */
+  configureApp?: (app: unknown) => void | Promise<void>;
+  /**
+   * Whether the provider binds a port during its `start` phase. When `false` the Nest application is still created and
+   * configured -- and available through {@link HttpNestServer.application} -- but is left unbound, so a caller can run
+   * work that must not listen, or bind at a point of its own choosing. Defaults to `true`.
+   */
+  listen?: boolean;
+  /**
+   * Options passed to {@link NestFactory.create}. When omitted, `{ logger: false }` is used so a test or a purely
+   * programmatic server stays silent; an explicit empty object opts back into Nest's default logger.
+   */
+  nestOptions?: NestApplicationOptions;
 }
 
 /** Root module used when the caller contributes no Nest module of its own. */
@@ -86,15 +103,21 @@ export class HttpNestServer implements HttpServer {
   private readonly middlewares: MiddlewareEntry[] = [];
   private app: INestApplication | null = null;
   private bound: { host: string; port: number } | null = null;
+  private preparing: Promise<INestApplication> | null = null;
 
   constructor(private readonly options: HttpNestOptions = {}) {}
 
   get listening(): boolean {
-    return this.app !== null;
+    return this.bound !== null;
   }
 
   get address(): { host: string; port: number } | null {
     return this.bound;
+  }
+
+  /** The created Nest application once {@link prepare} (or {@link listen}) has run, otherwise `null`. */
+  get application(): unknown | null {
+    return this.app;
   }
 
   route(method: HttpMethod, path: string, handler: HttpHandler): () => void {
@@ -125,9 +148,65 @@ export class HttpNestServer implements HttpServer {
     };
   }
 
-  async listen(): Promise<void> {
+  /**
+   * Creates and configures the Nest application without binding a port. Idempotent, and the first step of
+   * {@link listen}; exposed so a caller can hold a configured application -- for example to run a migration -- and
+   * bind later, or never.
+   */
+  async prepare(): Promise<void> {
     if (this.app) return;
+    if (!this.preparing) {
+      this.preparing = this.createApplication();
+      // A failed prepare must not poison later attempts; the awaited rejection still reaches the caller.
+      this.preparing.catch(() => {
+        this.preparing = null;
+      });
+    }
+    await this.preparing;
+  }
 
+  async listen(): Promise<void> {
+    if (this.bound) return;
+
+    await this.prepare();
+
+    const app = this.app;
+    if (!app) throw new Error("HttpNestServer application was not created");
+
+    if (this.options.host) await app.listen(this.options.port ?? 0, this.options.host);
+    else await app.listen(this.options.port ?? 0);
+
+    const address = app.getHttpServer().address();
+    this.bound =
+      address && typeof address === "object" ? { host: this.options.host ?? "0.0.0.0", port: address.port } : null;
+  }
+
+  async close(): Promise<void> {
+    const app = this.app;
+    this.app = null;
+    this.preparing = null;
+    this.bound = null;
+    if (app) await app.close();
+  }
+
+  private async createApplication(): Promise<INestApplication> {
+    const router = this.buildRouter();
+    const rootModule = (this.options.rootModule ?? EmptyModule) as Parameters<typeof NestFactory.create>[0];
+    const app = await NestFactory.create(rootModule, this.options.nestOptions ?? { logger: false });
+
+    try {
+      if (this.options.configureApp) await this.options.configureApp(app);
+      app.use(router);
+    } catch (error) {
+      await app.close();
+      throw error;
+    }
+
+    this.app = app;
+    return app;
+  }
+
+  private buildRouter(): Router {
     const router = Router();
 
     for (const { middleware } of this.middlewares) {
@@ -158,23 +237,7 @@ export class HttpNestServer implements HttpServer {
       });
     }
 
-    const rootModule = (this.options.rootModule ?? EmptyModule) as Parameters<typeof NestFactory.create>[0];
-    const app = await NestFactory.create(rootModule, { logger: false });
-    app.use(router);
-    if (this.options.host) await app.listen(this.options.port ?? 0, this.options.host);
-    else await app.listen(this.options.port ?? 0);
-
-    const address = app.getHttpServer().address();
-    this.bound =
-      address && typeof address === "object" ? { host: this.options.host ?? "0.0.0.0", port: address.port } : null;
-    this.app = app;
-  }
-
-  async close(): Promise<void> {
-    const app = this.app;
-    this.app = null;
-    this.bound = null;
-    if (app) await app.close();
+    return router;
   }
 
   private assertMutable(): void {

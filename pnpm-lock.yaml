@@ -44,6 +44,9 @@ importers:
       '@libreoj/plugin-core':
         specifier: workspace:*
         version: link:../../packages/plugin-core
+      '@libreoj/plugin-http-nest':
+        specifier: workspace:*
+        version: link:../../plugins/http-nest
       '@nestjs/axios':
         specifier: ^0.1.0
         version: 0.1.0(@nestjs/common@9.0.7(class-transformer@0.5.1)(class-validator@0.13.2)(reflect-metadata@0.1.13)(rxjs@7.5.6))(reflect-metadata@0.1.13)(rxjs@7.5.6)

@@ -1,67 +1,28 @@
-import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, type OnModuleDestroy } from "@nestjs/common";
 
-import { InlineResolver, PluginHost } from "@libreoj/plugin-core";
-import { codeLanguagePlugin } from "@libreoj/plugin-code-language";
+import { PluginHost } from "@libreoj/plugin-core";
 
-/** The single bundle this backend composes today; the host is built from this in-memory layer. */
-const CODE_LANGUAGE_BUNDLE = "@libreoj/plugin-code-language";
+import { PLUGIN_HOST } from "./plugin-host.token";
 
 /**
- * Owns the backend's one {@link PluginHost}. The kernel is created once, loaded with the official plugins through an
- * in-memory resolver, and torn down with the module -- so a future seam that bridges another service reads the same
- * kernel instead of composing a second one.
+ * The Nest-side bridge to the backend's single {@link PluginHost}. The host is composed by `main.ts` and handed to the
+ * root module through {@link PLUGIN_HOST}; this service never builds or loads a kernel of its own -- it only exposes
+ * the shared root scope's services under Nest tokens and forwards teardown to the composition root.
  *
- * Initialization is a single idempotent promise: whichever runs first (the registry factory, or Nest's
- * `onModuleInit`) creates and loads the host, and the other observes the same promise. This keeps the factory's
- * synchronous `get` safe without an async constructor, while `onModuleDestroy` forwards to `host.dispose()`.
+ * Because the host has already been loaded when Nest creates the application (the http provider starts Nest from inside
+ * `host.load`), the root scope is fully populated by the time any factory here runs, so {@link get} is synchronous.
  */
 @Injectable()
-export class PluginHostService implements OnModuleInit, OnModuleDestroy {
-  private host: PluginHost | null = null;
+export class PluginHostService implements OnModuleDestroy {
+  constructor(@Inject(PLUGIN_HOST) private readonly host: PluginHost) {}
 
-  private initialization: Promise<void> | null = null;
-
-  /** Creates and loads the host exactly once; concurrent callers share the same promise. */
-  initialize(): Promise<void> {
-    if (!this.initialization) {
-      this.initialization = this.load();
-    }
-    return this.initialization;
-  }
-
-  private async load(): Promise<void> {
-    const host = new PluginHost({
-      resolver: new InlineResolver({ [CODE_LANGUAGE_BUNDLE]: codeLanguagePlugin })
-    });
-    this.host = host;
-    try {
-      await host.load([{ bundles: [CODE_LANGUAGE_BUNDLE] }]);
-    } catch (error) {
-      // A half-initialized host must not leak: if Nest aborts startup on a load failure it will not call
-      // `onModuleDestroy`, so dispose here as well. `dispose()` is idempotent, so the teardown path is harmless.
-      await host.dispose();
-      this.host = null;
-      throw error;
-    }
-  }
-
-  /** A service provided by the kernel, resolved from the root scope. Requires {@link initialize} to have resolved. */
+  /** A service provided by the kernel, resolved from the shared host's root scope. */
   get<T>(name: string): T {
-    if (!this.host) throw new Error("PluginHostService has not been initialized");
     return this.host.root.get<T>(name);
   }
 
-  async onModuleInit(): Promise<void> {
-    await this.initialize();
-  }
-
+  /** Tears down the shared host. `PluginHost.dispose()` is idempotent, so a repeated call is harmless. */
   async onModuleDestroy(): Promise<void> {
-    try {
-      if (this.initialization) await this.initialization;
-    } finally {
-      // Clean up even when initialization rejected, so a failed load cannot leave the host undisposed.
-      await this.host?.dispose();
-      this.host = null;
-    }
+    await this.host.dispose();
   }
 }

@@ -1,10 +1,14 @@
 import util from "util";
 import cluster from "cluster";
 
-import { NestFactory } from "@nestjs/core";
+import { Logger, ValidationPipe, type DynamicModule, type NestApplicationOptions } from "@nestjs/common";
 import { NestExpressApplication } from "@nestjs/platform-express";
-import { Logger, ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+
+import { HTTP } from "@libreoj/plugin-api";
+import { codeLanguagePlugin } from "@libreoj/plugin-code-language";
+import { InlineResolver, PluginHost } from "@libreoj/plugin-core";
+import { createHttpNestPlugin, type HttpNestServer } from "@libreoj/plugin-http-nest";
 
 import getGitRepoInfo from "git-repo-info";
 import moment from "moment";
@@ -23,6 +27,7 @@ import { MigrationService } from "./migration/migration.service";
 import { ErrorFilter } from "./error.filter";
 import { RecaptchaFilter } from "./recaptcha.filter";
 import { ClusterService } from "./cluster/cluster.service";
+import { PLUGIN_HOST } from "./plugin/plugin-host.token";
 
 // eslint-disable-next-line no-extend-native
 String.prototype.format = function format(...args) {
@@ -31,8 +36,15 @@ String.prototype.format = function format(...args) {
 
 export const appGitRepoInfo = getGitRepoInfo();
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function initialize(): Promise<[packageInfo: any, configService: ConfigService, app: NestExpressApplication]> {
+const HTTP_NEST_BUNDLE = "@libreoj/plugin-http-nest";
+const CODE_LANGUAGE_BUNDLE = "@libreoj/plugin-code-language";
+
+async function runMigration(app: NestExpressApplication, migrationConfigFile: string) {
+  const migrationService = app.get(MigrationService);
+  await migrationService.migrate(migrationConfigFile, app);
+}
+
+async function bootstrap() {
   // Get package info
   // eslint-disable-next-line @typescript-eslint/no-var-requires, import/extensions
   const packageInfo = require("../package.json");
@@ -45,82 +57,113 @@ async function initialize(): Promise<[packageInfo: any, configService: ConfigSer
 
   if (cluster.isMaster) Logger.log(`Starting ${packageInfo.name} version ${appVersion}${gitRepoVersion}`, "Bootstrap");
 
-  // Create nestjs app
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    ...(process.env.NODE_ENV === "production" ? { logger: ["warn", "error"] } : {})
-  });
-  const configService = app.get(ConfigService);
-  app.setGlobalPrefix("api");
-  app.useGlobalFilters(app.get(ErrorFilter), app.get(RecaptchaFilter));
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
-  app.use(json({ limit: "1024mb" }));
-  if (configService.config.security.rateLimit) {
-    const clusterService = app.get(ClusterService);
-    const rateLimiterConfig: IRateLimiterOptions = {
-      points: configService.config.security.rateLimit.maxRequests,
-      duration: configService.config.security.rateLimit.durationSeconds
-    };
-
-    let rateLimiter: RateLimiterAbstract;
-
-    if (clusterService.enabled) {
-      // eslint-disable-next-line no-new
-      if (clusterService.isMaster) new RateLimiterClusterMaster();
-      else {
-        rateLimiter = new RateLimiterCluster(rateLimiterConfig);
-      }
-    } else rateLimiter = new RateLimiterMemory(rateLimiterConfig);
-
-    app.use((req: Request, res: Response, next: () => void) => {
-      rateLimiter
-        .consume(req.ip)
-        .then(() => {
-          next();
-        })
-        .catch(() => {
-          res.status(429).send("Too Many Requests");
-        });
-    });
-  }
-  app.set("trust proxy", configService.config.server.trustProxy);
-
-  const options = new DocumentBuilder()
-    .setTitle(packageInfo.name)
-    .setDescription(packageInfo.description)
-    .setVersion(appVersion)
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, options);
-  SwaggerModule.setup("/docs", app, document);
-
-  return [packageInfo, configService, app];
-}
-
-async function runMigration(app: NestExpressApplication, migrationConfigFile: string) {
-  const migrationService = app.get(MigrationService);
-  await migrationService.migrate(migrationConfigFile, app);
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function startApp(packageInfo: any, configService: ConfigService, app: NestExpressApplication) {
-  await app.listen(configService.config.server.port, configService.config.server.hostname);
-  Logger.log(
-    `${packageInfo.name} is listening on ${configService.config.server.hostname}:${configService.config.server.port}`,
-    "Bootstrap"
-  );
-}
-
-async function bootstrap() {
-  const [packageInfo, configService, app] = await initialize();
-
+  // The HTTP provider needs the bind address before it is mounted, and the migration branch must not listen. The
+  // configuration is read here through a second `ConfigService`: it is a plain class with no Nest dependency, so it
+  // resolves to the same validated configuration the Nest application will build, and lets both decisions be made
+  // before the kernel is loaded.
+  const bootstrapConfigService = new ConfigService();
   const migrationConfigFile = process.env.LIBREOJ_MIGRATION_CONFIG_FILE;
+
+  // Replicates the configuration the old `initialize()` applied right after `NestFactory.create`.
+  const configureApp = async (app: unknown): Promise<void> => {
+    const nestApp = app as NestExpressApplication;
+    const configService = nestApp.get(ConfigService);
+
+    nestApp.setGlobalPrefix("api");
+    nestApp.useGlobalFilters(nestApp.get(ErrorFilter), nestApp.get(RecaptchaFilter));
+    nestApp.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+    nestApp.use(json({ limit: "1024mb" }));
+    if (configService.config.security.rateLimit) {
+      const clusterService = nestApp.get(ClusterService);
+      const rateLimiterConfig: IRateLimiterOptions = {
+        points: configService.config.security.rateLimit.maxRequests,
+        duration: configService.config.security.rateLimit.durationSeconds
+      };
+
+      let rateLimiter: RateLimiterAbstract;
+
+      if (clusterService.enabled) {
+        // eslint-disable-next-line no-new
+        if (clusterService.isMaster) new RateLimiterClusterMaster();
+        else {
+          rateLimiter = new RateLimiterCluster(rateLimiterConfig);
+        }
+      } else rateLimiter = new RateLimiterMemory(rateLimiterConfig);
+
+      nestApp.use((req: Request, res: Response, next: () => void) => {
+        rateLimiter
+          .consume(req.ip)
+          .then(() => {
+            next();
+          })
+          .catch(() => {
+            res.status(429).send("Too Many Requests");
+          });
+      });
+    }
+    nestApp.set("trust proxy", configService.config.server.trustProxy);
+
+    const options = new DocumentBuilder()
+      .setTitle(packageInfo.name)
+      .setDescription(packageInfo.description)
+      .setVersion(appVersion)
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(nestApp, options);
+    SwaggerModule.setup("/docs", nestApp, document);
+  };
+
+  const nestOptions: NestApplicationOptions =
+    process.env.NODE_ENV === "production" ? { logger: ["warn", "error"] } : {};
+
+  // The backend's one composition root. `host` is assigned before `host.load()`, and the root module's factory closes
+  // over it: Nest is created from inside `host.load` (the http provider's `start` phase), by which time the host has
+  // been loaded, so the factory returns the already-loaded host. The module is global and exports the token, so
+  // `PluginModule` bridges to this same host through DI instead of composing a second kernel.
+  let host: PluginHost;
+  const rootModule: DynamicModule = {
+    module: AppModule,
+    global: true,
+    providers: [{ provide: PLUGIN_HOST, useFactory: () => host }],
+    exports: [PLUGIN_HOST]
+  };
+
+  host = new PluginHost({
+    resolver: new InlineResolver({
+      [HTTP_NEST_BUNDLE]: createHttpNestPlugin({
+        rootModule,
+        host: bootstrapConfigService.config.server.hostname,
+        port: bootstrapConfigService.config.server.port,
+        configureApp,
+        // The application binds the port inside `ClusterService.initialization` below, so the provider only creates
+        // and configures the Nest application during its `start` phase.
+        listen: false,
+        nestOptions
+      }),
+      [CODE_LANGUAGE_BUNDLE]: codeLanguagePlugin
+    }),
+    failureMode: "fatal"
+  });
+
+  await host.load([{ bundles: [HTTP_NEST_BUNDLE, CODE_LANGUAGE_BUNDLE] }]);
+
+  const httpServer = host.root.get<HttpNestServer>(HTTP);
+  const app = httpServer.application as NestExpressApplication;
+
   if (migrationConfigFile)
-    // Start migration
+    // The provider has created and configured the application without binding it, so migration behaves as before:
+    // run against the configured application and never listen.
     await runMigration(app, migrationConfigFile);
   // Start Nest.js app
   else {
     const clusterService = app.get(ClusterService);
-    await clusterService.initialization(async () => await startApp(packageInfo, configService, app));
+    await clusterService.initialization(async () => {
+      await httpServer.listen();
+      Logger.log(
+        `${packageInfo.name} is listening on ${bootstrapConfigService.config.server.hostname}:${bootstrapConfigService.config.server.port}`,
+        "Bootstrap"
+      );
+    });
   }
 }
 

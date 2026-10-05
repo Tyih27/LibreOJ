@@ -5,9 +5,13 @@ import { CODE_LANGUAGE_REGISTRY, type CodeLanguageRegistry } from "@libreoj/plug
 import { PluginHostService } from "./plugin-host.service";
 
 /**
- * The bridge between the plugin kernel and Nest's dependency injection. It composes a plugin tree from an in-memory
- * resolver -- so no filesystem or profile configuration is involved and the backend's startup path is unchanged --
- * and exposes the kernel's services under Nest tokens.
+ * The bridge between the plugin kernel and Nest's dependency injection. The kernel itself is composed by `main.ts` and
+ * contributed to the root module; this module only re-exposes the shared host's services under Nest tokens, so there is
+ * a single composition root rather than a second kernel built inside Nest.
+ *
+ * The registry is read synchronously from the already-loaded host: Nest is created from within `host.load` (the http
+ * provider starts it), so by the time this factory runs the code-language plugin has been applied and its service is in
+ * the root scope.
  */
 @Global()
 @Module({
@@ -15,12 +19,8 @@ import { PluginHostService } from "./plugin-host.service";
     PluginHostService,
     {
       provide: CODE_LANGUAGE_REGISTRY,
-      useFactory: async (host: PluginHostService): Promise<CodeLanguageRegistry> => {
-        // Ensure the shared kernel has loaded before reading from it; `initialize` is idempotent, so this coalesces
-        // with `onModuleInit` when that runs later.
-        await host.initialize();
-        return host.get<CodeLanguageRegistry>(CODE_LANGUAGE_REGISTRY);
-      },
+      useFactory: (host: PluginHostService): CodeLanguageRegistry =>
+        host.get<CodeLanguageRegistry>(CODE_LANGUAGE_REGISTRY),
       inject: [PluginHostService]
     }
   ],
