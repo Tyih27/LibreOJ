@@ -1,14 +1,29 @@
 import { SandboxParameter } from './interfaces';
 import nativeAddon from './nativeAddon';
 import { SandboxProcess } from './sandboxProcess';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import * as randomString from 'randomstring';
 import * as path from 'path';
 
 export * from './interfaces';
 
-if (!existsSync('/sys/fs/cgroup/memory/memory.memsw.usage_in_bytes')) {
-    throw new Error("Your linux kernel doesn't support memory-swap account. Please turn it on following the readme.");
+// The sandbox requires the cgroup v2 (unified) hierarchy with the memory
+// controller available. On a v2 host /sys/fs/cgroup is the unified root and
+// lists the controllers in cgroup.controllers.
+const CGROUP_V2_CONTROLLERS = '/sys/fs/cgroup/cgroup.controllers';
+if (!existsSync(CGROUP_V2_CONTROLLERS)) {
+    throw new Error(
+        `Your linux kernel doesn't support cgroup v2. simple-sandbox needs cgroup v2 (unified) with the memory ` +
+        `controller enabled, but ${CGROUP_V2_CONTROLLERS} does not exist.`
+    );
+}
+
+const availableControllers = readFileSync(CGROUP_V2_CONTROLLERS, 'utf8').split(/\s+/).filter(Boolean);
+if (!availableControllers.includes('memory')) {
+    throw new Error(
+        `Your linux kernel doesn't have the memory controller enabled in cgroup v2. simple-sandbox needs cgroup v2 ` +
+        `(unified) with the memory controller enabled, but "memory" is not listed in ${CGROUP_V2_CONTROLLERS}.`
+    );
 }
 
 const MAX_RETRY_TIMES = 20;

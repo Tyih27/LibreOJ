@@ -311,10 +311,13 @@ void *StartSandbox(const SandboxParameter &parameter,
             pidInfo("pids", parameter.cgroupName);
 
         vector<CgroupInfo *> infos = {&memInfo, &cpuInfo, &pidInfo};
+        // Under cgroup v2 (unified) all three controllers resolve to the same
+        // directory, so the group is created and populated exactly once.
+        // Repeating it for cpuacct/pids would kill the child we just attached.
+        CreateGroup(memInfo);
+        KillGroupMembers(memInfo);
         for (auto &item : infos)
         {
-            CreateGroup(*item);
-            KillGroupMembers(*item);
             WriteGroupProperty(*item, "tasks", container_pid);
         }
 

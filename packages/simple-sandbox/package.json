@@ -31,7 +31,8 @@
     "build": "tsc -p ./src",
     "build:native": "cmake-js compile",
     "build:watch": "tsc -w -p ./src",
-    "check-types": "tsc --noEmit -p ./src"
+    "check-types": "tsc --noEmit -p ./src",
+    "test": "node --test test/*.test.js"
   },
   "files": [
     "CMakeLists.txt",
