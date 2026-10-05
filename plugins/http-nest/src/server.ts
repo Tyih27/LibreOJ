@@ -113,6 +113,9 @@ export class HttpNestServer implements HttpServer {
   private app: NestApplicationLike | null = null;
   private bound: { host: string; port: number } | null = null;
   private preparing: Promise<NestApplicationLike> | null = null;
+  private binding: Promise<void> | null = null;
+  /** Bumped by {@link close}; an in-flight create/bind observes it and discards whatever it produced. */
+  private generation = 0;
 
   constructor(private readonly options: HttpNestOptions) {}
 
@@ -165,7 +168,7 @@ export class HttpNestServer implements HttpServer {
   async prepare(): Promise<void> {
     if (this.app) return;
     if (!this.preparing) {
-      this.preparing = this.createApplication();
+      this.preparing = this.createApplication(this.generation);
       // A failed prepare must not poison later attempts; the awaited rejection still reaches the caller.
       this.preparing.catch(() => {
         this.preparing = null;
@@ -176,14 +179,34 @@ export class HttpNestServer implements HttpServer {
 
   async listen(): Promise<void> {
     if (this.bound) return;
+    if (!this.binding) {
+      this.binding = this.bind();
+      // A failed bind must not poison later attempts; the awaited rejection still reaches the caller.
+      this.binding.catch(() => {
+        this.binding = null;
+      });
+    }
+    await this.binding;
+  }
 
+  /** Binds the prepared application, discarding it if {@link close} intervened. */
+  private async bind(): Promise<void> {
+    const generation = this.generation;
     await this.prepare();
+    if (generation !== this.generation) throw new Error("HttpNestServer was closed while listening");
 
     const app = this.app;
     if (!app) throw new Error("HttpNestServer application was not created");
 
     if (this.options.host) await app.listen(this.options.port ?? 0, this.options.host);
     else await app.listen(this.options.port ?? 0);
+
+    if (generation !== this.generation) {
+      // `close` ran while the port was being bound: release it and report the abort.
+      await app.close();
+      this.app = null;
+      throw new Error("HttpNestServer was closed while listening");
+    }
 
     const address = app.getHttpServer().address();
     this.bound =
@@ -193,23 +216,50 @@ export class HttpNestServer implements HttpServer {
   }
 
   async close(): Promise<void> {
+    // A close invalidates any in-flight create/bind; they observe the new generation and discard their application.
+    this.generation += 1;
+    const preparing = this.preparing;
+    const binding = this.binding;
+    this.preparing = null;
+    this.binding = null;
     const app = this.app;
     this.app = null;
-    this.preparing = null;
     this.bound = null;
+
     if (app) await app.close();
+    if (preparing) {
+      try {
+        await preparing;
+      } catch {
+        // The creation was aborted by this close; the application it produced was closed by createApplication.
+      }
+    }
+    if (binding) {
+      try {
+        await binding;
+      } catch {
+        // The bind was aborted by this close; it releases its own application.
+      }
+    }
   }
 
-  private async createApplication(): Promise<NestApplicationLike> {
+  private async createApplication(generation: number): Promise<NestApplicationLike> {
     const router = this.buildRouter();
     const app = await this.options.nest.create(this.options.rootModule, this.options.nestOptions ?? { logger: false });
 
     try {
+      if (generation !== this.generation) throw new Error("HttpNestServer was closed while preparing");
       if (this.options.configureApp) await this.options.configureApp(app);
+      if (generation !== this.generation) throw new Error("HttpNestServer was closed while preparing");
       app.use(router);
     } catch (error) {
       await app.close();
       throw error;
+    }
+
+    if (generation !== this.generation) {
+      await app.close();
+      throw new Error("HttpNestServer was closed while preparing");
     }
 
     this.app = app;
