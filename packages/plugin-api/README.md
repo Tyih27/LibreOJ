@@ -22,8 +22,18 @@ in-process service contracts only.
 | Seam | Constant | Interface | Source mirrored |
 | --- | --- | --- | --- |
 | Code language | `CODE_LANGUAGE_REGISTRY` | `CodeLanguageRegistry` | `apps/backend/src/code-language/` |
+| Judge language | `LANGUAGE_REGISTRY` | `LanguageRegistry` | `apps/judge/src/languages/index.ts` |
 
 Other seams (`http`, `database`, `cache`, `storage`, `mail`, …) are added only when an implementation needs them.
+
+### Judge language seam
+
+`LANGUAGE_REGISTRY` (`"languageRegistry"`) mirrors the judge's language lookup. `LanguageRegistry.getLanguage(name)`
+returns a `LanguageConfig` and the provider is expected to throw on an unknown name; `names` exposes the supported
+language names. `LanguageConfig<T>` keeps the judge's `name` / `getMetaOptions` / `compile` / `run` members, and the
+sandbox and POSIX types those members reference (`TaskIndependentSandboxConfig`, `SandboxConfigBase`,
+`CompilationConfig`, `FileDescriptor`, `OverridableRecord`) are re-declared here as structurally equivalent
+interfaces. Judge-only concerns (checker bindings, sandbox RPC, …) stay out of this seam.
 
 ## Scripts
 

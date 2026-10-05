@@ -11,3 +11,14 @@ export type {
   HttpResponse,
   HttpServer
 } from "./http";
+
+export { LANGUAGE_REGISTRY } from "./judge";
+export type {
+  CompilationConfig,
+  FileDescriptor,
+  LanguageConfig,
+  LanguageRegistry,
+  OverridableRecord,
+  SandboxConfigBase,
+  TaskIndependentSandboxConfig
+} from "./judge";
