@@ -1,36 +1,20 @@
-import { SandboxResult } from "simple-sandbox";
+import { CHECKER_REGISTRY, type CheckerRegistry, type CustomChecker as CustomCheckerSeam } from "@libreoj/plugin-api";
 
 import { CpuAffinityStrategy, runSandbox, SANDBOX_INSIDE_PATH_BINARY } from "../../sandbox";
 import { CompileResultSuccess } from "../../compile";
 import getLanguage from "../../languages";
+import { getPluginHost } from "../../plugin/plugin-host";
 import { ConfigurationError } from "../../error";
 import { MappedPath } from "../../utils";
-import { OmittableString } from "../../omittableString";
 
-import { CheckerResult, CheckerTypeCustom } from "..";
+import { CheckerTypeCustom } from "..";
 
-export interface CustomChecker {
-  /**
-   * A function to validate the checker's config, e.g. a testlib checker could only be written in the cpp language.
-   * @returns The error message, will trigger a Confi
-   */
-  validate?(checker: CheckerTypeCustom): string;
-
-  runChecker(
-    checker: CheckerTypeCustom,
-    inputFile: MappedPath,
-    outputFile: MappedPath,
-    answerFile: MappedPath,
-    code: string,
-    workingDirectory: MappedPath,
-    runSandboxForCustomChecker: (
-      stdin: string,
-      stdout: string,
-      stderr: string,
-      parameters?: string[]
-    ) => Promise<SandboxResult>
-  ): Promise<CheckerResult | OmittableString>;
-}
+/**
+ * A custom checker interface. It extends the `checkerRegistry` seam's `CustomChecker` so the compiler enforces the
+ * contract a provider must satisfy across the package boundary; the concrete implementations live in the sibling
+ * modules below and are unchanged.
+ */
+export interface CustomChecker extends CustomCheckerSeam {}
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const customCheckerInterfaces: Record<string, CustomChecker> = {
@@ -44,14 +28,33 @@ const customCheckerInterfaces: Record<string, CustomChecker> = {
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 /**
+ * Internal lookup over the judge's own custom checkers. The `checkerRegistry` provider is backed by this function, so
+ * it reads the concrete implementations without going through the seam (which would be circular: the exports below
+ * resolve the registry from it).
+ *
+ * An unknown name throws. The previous direct `customCheckerInterfaces[name]` lookup also failed on an unknown name,
+ * but with an incidental `TypeError` from dereferencing `undefined`; this makes the failure explicit.
+ */
+export function getCustomCheckerInterface(name: string): CustomChecker {
+  const checker = customCheckerInterfaces[name];
+  if (!checker) throw new Error(`Unsupported custom checker interface: ${name}`);
+  return checker;
+}
+
+/** The supported custom checker interface names, frozen so the seam cannot be used to mutate the internal key set. */
+export const customCheckerInterfaceNames: readonly string[] = Object.freeze(Object.keys(customCheckerInterfaces));
+
+/**
  * This is called BEFORE compiling the checker to detect some problems that will cause the
  * successfully compiled checker's not usable.
  *
  * e.g. a testlib checker could only be written in the cpp language.
  */
 export function validateCustomChecker(checker: CheckerTypeCustom) {
-  if (customCheckerInterfaces[checker.interface].validate) {
-    const error = customCheckerInterfaces[checker.interface].validate(checker);
+  const registry = getPluginHost().root.get<CheckerRegistry>(CHECKER_REGISTRY);
+  const customChecker = registry.getCustomChecker(checker.interface);
+  if (customChecker.validate) {
+    const error = customChecker.validate(checker);
     if (error) throw new ConfigurationError(`Invalid custom checker config: ${error}`);
   }
 }
@@ -69,7 +72,9 @@ export async function runCustomChecker(
   workingDirectory: MappedPath,
   tempDirectoryOutside: string
 ) {
-  return await customCheckerInterfaces[checker.interface].runChecker(
+  const registry = getPluginHost().root.get<CheckerRegistry>(CHECKER_REGISTRY);
+  const customChecker = registry.getCustomChecker(checker.interface);
+  return await customChecker.runChecker(
     checker,
     inputFile,
     outputFile,

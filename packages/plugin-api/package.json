@@ -17,6 +17,9 @@
     "format": "prettier --write \"src/**/*.ts\" \"*.json\"",
     "test": "tsx --test src/*.test.ts"
   },
+  "dependencies": {
+    "@libreoj/judge-protocol": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "18.6.3",
     "prettier": "catalog:",

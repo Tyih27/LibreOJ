@@ -12,13 +12,19 @@ export type {
   HttpServer
 } from "./http";
 
-export { LANGUAGE_REGISTRY } from "./judge";
+export { CHECKER_REGISTRY, LANGUAGE_REGISTRY } from "./judge";
 export type {
+  CheckerRegistry,
+  CheckerResult,
+  CheckerTypeCustom,
   CompilationConfig,
+  CustomChecker,
   FileDescriptor,
   LanguageConfig,
   LanguageRegistry,
+  MappedPath,
   OverridableRecord,
   SandboxConfigBase,
+  SandboxResult,
   TaskIndependentSandboxConfig
 } from "./judge";

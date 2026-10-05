@@ -23,6 +23,7 @@ in-process service contracts only.
 | --- | --- | --- | --- |
 | Code language | `CODE_LANGUAGE_REGISTRY` | `CodeLanguageRegistry` | `apps/backend/src/code-language/` |
 | Judge language | `LANGUAGE_REGISTRY` | `LanguageRegistry` | `apps/judge/src/languages/index.ts` |
+| Judge checker | `CHECKER_REGISTRY` | `CheckerRegistry` | `apps/judge/src/checkers/custom/index.ts` |
 
 Other seams (`http`, `database`, `cache`, `storage`, `mail`, …) are added only when an implementation needs them.
 
@@ -34,6 +35,19 @@ language names. `LanguageConfig<T>` keeps the judge's `name` / `getMetaOptions` 
 sandbox and POSIX types those members reference (`TaskIndependentSandboxConfig`, `SandboxConfigBase`,
 `CompilationConfig`, `FileDescriptor`, `OverridableRecord`) are re-declared here as structurally equivalent
 interfaces. Judge-only concerns (checker bindings, sandbox RPC, …) stay out of this seam.
+
+### Judge checker seam
+
+`CHECKER_REGISTRY` (`"checkerRegistry"`) mirrors the judge's custom-checker registry
+(`apps/judge/src/checkers/custom/index.ts`). `CheckerRegistry.getCustomChecker(name)` returns a `CustomChecker` and the
+provider is expected to throw on an unknown name; `interfaces` exposes the supported interface names
+(`testlib`, `legacy`, `lemon`, `hustoj`, `qduoj`, `domjudge`). `CustomChecker.runChecker` takes the `CheckerTypeCustom`
+config, the mapped input/output/answer/working paths, the checker source, and the consumer-supplied
+`runSandboxForCustomChecker` closure, then returns a `CheckerResult` or an error `OmittableString`.
+
+Unlike the language seam, this seam exists so a plugin can contribute a checker *interface implementation*, not a
+language. The `OmittableString` wire type is reused from `@libreoj/judge-protocol` rather than re-declared. The builtin
+checkers (`integers`, `floats`, `lines`, `binary`) run through native bindings in `apps/judge` and are out of scope.
 
 ## Scripts
 
