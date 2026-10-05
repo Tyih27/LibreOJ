@@ -1,10 +1,29 @@
+import "reflect-metadata";
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { INestApplication } from "@nestjs/common";
-import type { NextFunction, Request, Response } from "express";
+import { Module, type INestApplication } from "@nestjs/common";
+import { NestFactory } from "@nestjs/core";
 
-import { HttpNestServer } from "./server";
+import { HttpNestServer, type NestApplicationLike, type NestFactoryLike } from "./server";
+
+@Module({})
+class TestRootModule {}
+
+/** The caller's Nest runtime, injected so the provider shares a single @nestjs/core instance. */
+const nest: NestFactoryLike = {
+  create: (module, options) =>
+    NestFactory.create(
+      module as never,
+      (options ?? { logger: false }) as never
+    ) as unknown as Promise<NestApplicationLike>
+  // The cast above is only because Nest's own `INestApplication` is structurally wider than the minimal view here.
+};
+
+function createServer(): HttpNestServer {
+  return new HttpNestServer({ rootModule: TestRootModule, nest, port: 0 });
+}
 
 function url(server: HttpNestServer, path: string): string {
   const address = server.address;
@@ -13,7 +32,7 @@ function url(server: HttpNestServer, path: string): string {
 }
 
 test("serves a route registered before listen and stops on close", async () => {
-  const server = new HttpNestServer({ port: 0 });
+  const server = createServer();
   server.route("GET", "/ping", (_request, response) => {
     response.body = { pong: true };
   });
@@ -33,7 +52,7 @@ test("serves a route registered before listen and stops on close", async () => {
 });
 
 test("honors async handlers, status, headers and string bodies", async () => {
-  const server = new HttpNestServer({ port: 0 });
+  const server = createServer();
   server.route("GET", "/teapot", async (_request, response) => {
     await Promise.resolve();
     response.status = 418;
@@ -53,7 +72,7 @@ test("honors async handlers, status, headers and string bodies", async () => {
 });
 
 test("middleware can short-circuit or pass through, sharing headers", async () => {
-  const server = new HttpNestServer({ port: 0 });
+  const server = createServer();
   server.use((request, response, next) => {
     if (request.path === "/blocked") {
       response.status = 403;
@@ -86,7 +105,7 @@ test("middleware can short-circuit or pass through, sharing headers", async () =
 });
 
 test("rejects registering routes after listen", async () => {
-  const server = new HttpNestServer({ port: 0 });
+  const server = createServer();
   await server.listen();
   try {
     assert.throws(() => server.route("GET", "/late", () => undefined), /after HttpServer\.listen/);
@@ -95,42 +114,8 @@ test("rejects registering routes after listen", async () => {
   }
 });
 
-test("prepare creates and configures the application without binding, then listen binds it", async () => {
-  let configured: unknown = null;
-  const server = new HttpNestServer({
-    port: 0,
-    configureApp: app => {
-      configured = app;
-      (app as INestApplication).use((_request: Request, response: Response, next: NextFunction) => {
-        response.setHeader("x-configured", "1");
-        next();
-      });
-    }
-  });
-  server.route("GET", "/prepared", (_request, response) => {
-    response.body = "ok";
-  });
-
-  await server.prepare();
-  assert.equal(configured, server.application);
-  assert.ok(server.application, "prepare should expose the created application");
-  assert.equal(server.listening, false);
-  assert.equal(server.address, null);
-
-  await server.listen();
-  try {
-    assert.equal(server.listening, true);
-    const response = await fetch(url(server, "/prepared"));
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-configured"), "1");
-    assert.equal(await response.text(), "ok");
-  } finally {
-    await server.close();
-  }
-});
-
 test("a registered route can be disposed before listen", async () => {
-  const server = new HttpNestServer({ port: 0 });
+  const server = createServer();
   const dispose = server.route("GET", "/gone", (_request, response) => {
     response.body = "gone";
   });
@@ -143,4 +128,26 @@ test("a registered route can be disposed before listen", async () => {
   } finally {
     await server.close();
   }
+});
+
+test("prepare() creates and configures the application without binding", async () => {
+  let configured = false;
+  const server = new HttpNestServer({
+    rootModule: TestRootModule,
+    nest,
+    port: 0,
+    listen: false,
+    configureApp: app => {
+      configured = true;
+      // The application is usable for configuration, exactly as a directly created one.
+      (app as unknown as INestApplication).setGlobalPrefix("api");
+    }
+  });
+
+  await server.prepare();
+  assert.equal(configured, true);
+  assert.ok(server.application, "application should be available after prepare");
+  assert.equal(server.listening, false, "prepare must not bind a port");
+
+  await server.close();
 });

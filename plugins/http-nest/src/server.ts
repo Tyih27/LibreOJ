@@ -1,7 +1,3 @@
-import "reflect-metadata";
-
-import { Module, type INestApplication, type NestApplicationOptions } from "@nestjs/common";
-import { NestFactory } from "@nestjs/core";
 import { Router, type NextFunction, type Request, type Response } from "express";
 
 import type {
@@ -13,37 +9,49 @@ import type {
   HttpServer
 } from "@libreoj/plugin-api";
 
+/**
+ * Minimal structural view of a Nest application, so this provider adapts a Nest runtime the consumer already owns
+ * instead of importing a Nest copy of its own. That keeps a single `@nestjs/core` instance in the process, which is
+ * required for Nest's injector to resolve internal providers such as `ModuleRef`.
+ */
+export interface NestApplicationLike {
+  use(...args: unknown[]): unknown;
+  listen(port?: number, host?: string): Promise<unknown>;
+  getHttpServer(): { address(): unknown };
+  get<T = unknown>(token: unknown): T;
+  close(): Promise<void>;
+}
+
+/** Creates a Nest application from a root module, using the caller's Nest instance. */
+export interface NestFactoryLike {
+  create(module: unknown, options?: unknown): Promise<NestApplicationLike>;
+}
+
 /** Options for {@link HttpNestServer}. */
 export interface HttpNestOptions {
-  /**
-   * The Nest module to mount -- typically the application's existing root module. When omitted, an empty module is
-   * used, so a purely plugin-contributed server needs no Nest module of its own.
-   */
-  rootModule?: unknown;
+  /** The Nest module to mount -- typically the application's existing root module. */
+  rootModule: unknown;
+  /** The caller's Nest runtime, so this provider shares the application's single Nest instance. */
+  nest: NestFactoryLike;
   host?: string;
   port?: number;
   /**
-   * Called with the freshly created Nest application, after {@link NestFactory.create} and before the contributed
-   * routes are mounted and the port is bound. Lets an application install its global prefix, filters, pipes or
-   * Swagger exactly as it would on a directly created application.
+   * Called with the freshly created Nest application, after it is created and before the contributed routes are
+   * mounted and the port is bound. Lets an application install its global prefix, filters, pipes or Swagger exactly as
+   * it would on a directly created application.
    */
-  configureApp?: (app: unknown) => void | Promise<void>;
+  configureApp?: (app: NestApplicationLike) => void | Promise<void>;
   /**
    * Whether the provider binds a port during its `start` phase. When `false` the Nest application is still created and
-   * configured -- and available through {@link HttpNestServer.application} -- but is left unbound, so a caller can run
-   * work that must not listen, or bind at a point of its own choosing. Defaults to `true`.
+   * configured -- and available through {@link HttpNestServer.application} -- but is left unbound. Defaults to `true`.
    */
   listen?: boolean;
   /**
-   * Options passed to {@link NestFactory.create}. When omitted, `{ logger: false }` is used so a test or a purely
+   * Options passed to the caller's `nest.create`. When omitted, `{ logger: false }` is used so a test or a purely
    * programmatic server stays silent; an explicit empty object opts back into Nest's default logger.
    */
-  nestOptions?: NestApplicationOptions;
+  nestOptions?: unknown;
 }
-
-/** Root module used when the caller contributes no Nest module of its own. */
-@Module({})
-class EmptyModule {}
 
 interface RouteEntry {
   method: HttpMethod;
@@ -94,18 +102,19 @@ function responseFor(response: Response): HttpResponse {
  * The `http` seam's NestJS Provider.
  *
  * A server owns an Express `Router` pre-populated with the routes and middleware plugins contributed, then mounts it
- * on a Nest application built from the configured root module. This keeps plugin-contributed endpoints independent of
- * Nest's controller decorators and module graph, while the root module preserves an application's existing Nest
- * controllers unchanged.
+ * on a Nest application the caller's own Nest runtime creates from the configured root module. This keeps
+ * plugin-contributed endpoints independent of Nest's controller decorators and module graph, while the root module
+ * preserves an application's existing Nest controllers unchanged -- and, because the caller supplies the Nest runtime,
+ * the process keeps a single Nest instance.
  */
 export class HttpNestServer implements HttpServer {
   private readonly routes: RouteEntry[] = [];
   private readonly middlewares: MiddlewareEntry[] = [];
-  private app: INestApplication | null = null;
+  private app: NestApplicationLike | null = null;
   private bound: { host: string; port: number } | null = null;
-  private preparing: Promise<INestApplication> | null = null;
+  private preparing: Promise<NestApplicationLike> | null = null;
 
-  constructor(private readonly options: HttpNestOptions = {}) {}
+  constructor(private readonly options: HttpNestOptions) {}
 
   get listening(): boolean {
     return this.bound !== null;
@@ -116,7 +125,7 @@ export class HttpNestServer implements HttpServer {
   }
 
   /** The created Nest application once {@link prepare} (or {@link listen}) has run, otherwise `null`. */
-  get application(): unknown | null {
+  get application(): NestApplicationLike | null {
     return this.app;
   }
 
@@ -178,7 +187,9 @@ export class HttpNestServer implements HttpServer {
 
     const address = app.getHttpServer().address();
     this.bound =
-      address && typeof address === "object" ? { host: this.options.host ?? "0.0.0.0", port: address.port } : null;
+      address && typeof address === "object"
+        ? { host: this.options.host ?? "0.0.0.0", port: (address as { port: number }).port }
+        : null;
   }
 
   async close(): Promise<void> {
@@ -189,10 +200,9 @@ export class HttpNestServer implements HttpServer {
     if (app) await app.close();
   }
 
-  private async createApplication(): Promise<INestApplication> {
+  private async createApplication(): Promise<NestApplicationLike> {
     const router = this.buildRouter();
-    const rootModule = (this.options.rootModule ?? EmptyModule) as Parameters<typeof NestFactory.create>[0];
-    const app = await NestFactory.create(rootModule, this.options.nestOptions ?? { logger: false });
+    const app = await this.options.nest.create(this.options.rootModule, this.options.nestOptions ?? { logger: false });
 
     try {
       if (this.options.configureApp) await this.options.configureApp(app);

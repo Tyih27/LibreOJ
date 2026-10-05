@@ -1156,6 +1156,10 @@ importers:
       '@libreoj/plugin-core':
         specifier: workspace:*
         version: link:../../packages/plugin-core
+      express:
+        specifier: 4.18.1
+        version: 4.18.1(supports-color@10.2.2)
+    devDependencies:
       '@nestjs/common':
         specifier: ^9.0.7
         version: 9.0.7(class-transformer@0.5.1)(class-validator@0.13.2)(reflect-metadata@0.1.13)(rxjs@7.8.1)
@@ -1165,22 +1169,27 @@ importers:
       '@nestjs/platform-express':
         specifier: ^9.0.7
         version: 9.0.7(@nestjs/common@9.0.7(class-transformer@0.5.1)(class-validator@0.13.2)(reflect-metadata@0.1.13)(rxjs@7.8.1))(@nestjs/core@9.0.7)(supports-color@10.2.2)
-      express:
-        specifier: 4.18.1
-        version: 4.18.1(supports-color@10.2.2)
-      reflect-metadata:
-        specifier: ^0.1.13
-        version: 0.1.13
-    devDependencies:
       '@types/express':
         specifier: ^4.17.13
         version: 4.17.13
       '@types/node':
         specifier: 18.6.3
         version: 18.6.3
+      class-transformer:
+        specifier: ^0.5.1
+        version: 0.5.1
+      class-validator:
+        specifier: ^0.13.2
+        version: 0.13.2
       prettier:
         specifier: 'catalog:'
         version: 2.7.1
+      reflect-metadata:
+        specifier: ^0.1.13
+        version: 0.1.13
+      rxjs:
+        specifier: ^7.5.6
+        version: 7.8.1
       tsx:
         specifier: 4.23.1
         version: 4.23.1

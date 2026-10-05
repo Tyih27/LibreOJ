@@ -1,3 +1,3 @@
 export { HttpNestServer } from "./server";
-export type { HttpNestOptions } from "./server";
-export { createHttpNestPlugin, httpNestPlugin } from "./plugin";
+export type { HttpNestOptions, NestApplicationLike, NestFactoryLike } from "./server";
+export { createHttpNestPlugin } from "./plugin";

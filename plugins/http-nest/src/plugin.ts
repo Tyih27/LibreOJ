@@ -6,12 +6,13 @@ import { HttpNestServer, type HttpNestOptions } from "./server";
 /**
  * Builds the `http` seam's NestJS Provider plugin.
  *
- * `options.rootModule` lets the application hand its existing Nest root module to the server; routes and middleware
- * contributed by other plugins are mounted alongside it. The server listens when the host reaches its `start` phase,
- * once every contributing plugin has registered. With `options.listen === false` it instead only creates and
- * configures the application, leaving the caller to bind later.
+ * `options.rootModule` is the application's Nest root module and `options.nest` its Nest runtime; passing the runtime
+ * in keeps one `@nestjs/core` instance in the process. Routes and middleware contributed by other plugins are mounted
+ * alongside the root module's controllers. The server listens when the host reaches its `start` phase, once every
+ * contributing plugin has registered; with `options.listen === false` it only creates and configures the application,
+ * leaving the caller to bind later.
  */
-export function createHttpNestPlugin(options: HttpNestOptions = {}): PluginDefinition {
+export function createHttpNestPlugin(options: HttpNestOptions): PluginDefinition {
   return {
     name: "@libreoj/plugin-http-nest",
     provide: [HTTP],
@@ -29,6 +30,3 @@ export function createHttpNestPlugin(options: HttpNestOptions = {}): PluginDefin
     }
   };
 }
-
-/** The provider with default options: an empty root module listening on an ephemeral port. */
-export const httpNestPlugin: PluginDefinition = createHttpNestPlugin();

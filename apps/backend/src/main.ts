@@ -1,14 +1,20 @@
 import util from "util";
 import cluster from "cluster";
 
-import { Logger, ValidationPipe, type DynamicModule, type NestApplicationOptions } from "@nestjs/common";
+import { Logger, ValidationPipe, type NestApplicationOptions } from "@nestjs/common";
+import { NestFactory } from "@nestjs/core";
 import { NestExpressApplication } from "@nestjs/platform-express";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 
 import { HTTP } from "@libreoj/plugin-api";
 import { codeLanguagePlugin } from "@libreoj/plugin-code-language";
 import { InlineResolver, PluginHost } from "@libreoj/plugin-core";
-import { createHttpNestPlugin, type HttpNestServer } from "@libreoj/plugin-http-nest";
+import {
+  createHttpNestPlugin,
+  type HttpNestServer,
+  type NestApplicationLike,
+  type NestFactoryLike
+} from "@libreoj/plugin-http-nest";
 
 import getGitRepoInfo from "git-repo-info";
 import moment from "moment";
@@ -27,7 +33,7 @@ import { MigrationService } from "./migration/migration.service";
 import { ErrorFilter } from "./error.filter";
 import { RecaptchaFilter } from "./recaptcha.filter";
 import { ClusterService } from "./cluster/cluster.service";
-import { PLUGIN_HOST } from "./plugin/plugin-host.token";
+import { setPluginHost } from "./plugin/plugin-host";
 
 // eslint-disable-next-line no-extend-native
 String.prototype.format = function format(...args) {
@@ -116,22 +122,22 @@ async function bootstrap() {
   const nestOptions: NestApplicationOptions =
     process.env.NODE_ENV === "production" ? { logger: ["warn", "error"] } : {};
 
-  // The backend's one composition root. `host` is assigned before `host.load()`, and the root module's factory closes
-  // over it: Nest is created from inside `host.load` (the http provider's `start` phase), by which time the host has
-  // been loaded, so the factory returns the already-loaded host. The module is global and exports the token, so
-  // `PluginModule` bridges to this same host through DI instead of composing a second kernel.
-  let host: PluginHost;
-  const rootModule: DynamicModule = {
-    module: AppModule,
-    global: true,
-    providers: [{ provide: PLUGIN_HOST, useFactory: () => host }],
-    exports: [PLUGIN_HOST]
+  // The Nest runtime handed to the http provider, so the plugin shares this application's single @nestjs/core instance
+  // (a second instance would break Nest's internal provider resolution).
+  const nest: NestFactoryLike = {
+    create: (module, options) =>
+      NestFactory.create(module as never, options as never) as unknown as Promise<NestApplicationLike>
   };
 
-  host = new PluginHost({
+  // The backend's one composition root. The host is registered with the module-level accessor before `host.load()`, so
+  // Nest-side factories (evaluated while Nest is created from inside `host.load`) can read the already-loaded host
+  // through `getPluginHost()`. The Nest application is created from the original `AppModule`, unchanged, so the module
+  // graph is preserved.
+  const host = new PluginHost({
     resolver: new InlineResolver({
       [HTTP_NEST_BUNDLE]: createHttpNestPlugin({
-        rootModule,
+        rootModule: AppModule,
+        nest,
         host: bootstrapConfigService.config.server.hostname,
         port: bootstrapConfigService.config.server.port,
         configureApp,
@@ -144,6 +150,8 @@ async function bootstrap() {
     }),
     failureMode: "fatal"
   });
+
+  setPluginHost(host);
 
   await host.load([{ bundles: [HTTP_NEST_BUNDLE, CODE_LANGUAGE_BUNDLE] }]);
 
