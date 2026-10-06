@@ -16,10 +16,13 @@ import { CodeLanguageService } from "../../../code-language/code-language.servic
 import { validateMetaAndSubtasks } from "../../common/meta-and-subtasks";
 import { validateChecker } from "../../common/checker";
 import { validateExtraSourceFiles } from "../../common/extra-source-files";
-import { autoMatchInputToOutput } from "../../common/auto-match-input-output";
 import { restrictProperties } from "../../common/restrict-properties";
+import type { ImportContext } from "../../../problem-data-import";
+import { getProblemDataImporters } from "../../../plugin/services";
 
 import { ProblemTypeServiceInterface } from "../../problem-type-service.interface";
+
+const IMPORT_CONTEXT: ImportContext = { mode: "input-to-output", optional: false };
 
 @Injectable()
 export class ProblemTypeTraditionalService
@@ -61,7 +64,7 @@ export class ProblemTypeTraditionalService
       ? judgeInfo
       : {
           ...judgeInfo,
-          subtasks: autoMatchInputToOutput(testData)
+          subtasks: getProblemDataImporters().resolve(testData, IMPORT_CONTEXT).import(testData, IMPORT_CONTEXT)
         };
   }
 

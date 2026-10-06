@@ -299,3 +299,23 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 ### 出口条件
 - 既有 156 项测试保持通过；新增覆盖 isolate 可见性/隔离/传播、运行期 install/uninstall/reload、ESM fixture、optional 语义。
 - build / check-types / check-format 全绿；`dump-config` 端到端仍正确。
+
+## 14. 后端数据格式导入 seam（D1 起）与明确不做项
+
+### 14.1 数据格式导入 seam
+- 背景：题目测试数据的"格式识别"原先硬编码在 `problem-type/common/auto-match-input-output.ts`（只认 `.in`↔`.out`/`.ans`），
+  由三种题型的 `preprocessJudgeInfo` 在 `judgeInfo.subtasks` 未显式给出时调用。
+- seam：`problemDataImporters`（backend 本地，契约复用 backend 类型），
+  `ProblemDataImporter { name, priority?, detect(testData, ctx), import(testData, ctx) -> ProblemDataSubtask[] }`
+  + `ProblemDataImporterRegistry { importers, resolve(testData, ctx) }`。
+- Provider：`@libreoj/backend-problem-data-import` 注册内置 `libreoj-native`（逐字封装既有 auto-match 逻辑，最低优先级作为回退）。
+- 消费者：三种题型的 `preprocessJudgeInfo` 改为经 `getProblemDataImporters().resolve(...).import(...)`。
+- **子任务保持绑定**：subtasks 仍由导入器/题型产出并校验，不单独拆出评分 seam。
+- 后续（逐个小步）：D2 起新增格式 importer（如 `subtasks.json` 配置格式、Lemon/HUSTOJ/domjudge 命名约定），每个一个插件。
+
+### 14.2 明确不做（后置）
+- **problem-type 整体插件化**（把三种题型做成 `problemTypeRegistry` 的插件，加题型=加插件）：**暂不做**。
+  原因：`ProblemTypeServiceInterface` 依赖 backend 实体（`ProblemFileEntity`/`FileEntity`）与领域接口
+  （`ProblemJudgeInfo`/`SubmissionContent`/`SubmissionProgress`），且被 `problem`/`submission`/`migration` 广泛消费，
+  属中等偏大改造；`problemType` 存库、前端认这几型，插件化后须保证内置三型默认启用。将来若需要再单独立项。
+- **judge 侧 `subtaskScoring` 独立 seam**：**不做**。子任务评分/聚集保持随题型与导入器。

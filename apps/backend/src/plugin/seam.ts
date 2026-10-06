@@ -15,6 +15,7 @@ import type { DataSource } from "typeorm";
 import type { ConfigService } from "../config/config.service";
 import type { FileService } from "../file/file.service";
 import type { MailService } from "../mail/mail.service";
+import type { ProblemDataImporterRegistry } from "../problem-data-import/importer";
 import type { LockService } from "../redis/lock.service";
 import type { RedisService } from "../redis/redis.service";
 
@@ -36,6 +37,9 @@ export const BACKEND_STORAGE = "backendStorage";
 /** The mail service. */
 export const BACKEND_MAIL = "backendMail";
 
+/** The problem data importers used to auto-detect subtasks from testdata. */
+export const PROBLEM_DATA_IMPORTERS = "problemDataImporters";
+
 /** The backend configuration service, as provided by the backend. */
 export type BackendConfig = ConfigService;
 
@@ -53,3 +57,6 @@ export type BackendStorage = FileService;
 
 /** The mail service, as provided by the backend. */
 export type BackendMail = MailService;
+
+/** The problem data importer registry, as provided by the backend. */
+export type BackendProblemDataImporters = ProblemDataImporterRegistry;

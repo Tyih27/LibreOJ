@@ -14,11 +14,14 @@ import { SubmissionProgress } from "../../../submission/submission-progress.inte
 import { CodeLanguageService } from "../../../code-language/code-language.service";
 import { validateMetaAndSubtasks } from "../../common/meta-and-subtasks";
 import { validateChecker } from "../../common/checker";
-import { autoMatchOutputToInput } from "../../common/auto-match-input-output";
 import { FileEntity } from "../../../file/file.entity";
 import { restrictProperties } from "../../common/restrict-properties";
+import type { ImportContext } from "../../../problem-data-import";
+import { getProblemDataImporters } from "../../../plugin/services";
 
 import { ProblemTypeServiceInterface } from "../../problem-type-service.interface";
+
+const IMPORT_CONTEXT: ImportContext = { mode: "output-to-input", optional: true };
 
 @Injectable()
 export class ProblemTypeSubmitAnswerService
@@ -57,7 +60,7 @@ export class ProblemTypeSubmitAnswerService
       ? judgeInfo
       : {
           ...judgeInfo,
-          subtasks: autoMatchOutputToInput(testData, true)
+          subtasks: getProblemDataImporters().resolve(testData, IMPORT_CONTEXT).import(testData, IMPORT_CONTEXT)
         };
   }
 

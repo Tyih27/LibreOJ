@@ -7,8 +7,24 @@
  * `inject.required`.
  */
 
-import type { BackendConfig, BackendDatabase, BackendLock, BackendMail, BackendRedis, BackendStorage } from "./seam";
-import { BACKEND_CONFIG, BACKEND_DATABASE, BACKEND_LOCK, BACKEND_MAIL, BACKEND_REDIS, BACKEND_STORAGE } from "./seam";
+import type {
+  BackendConfig,
+  BackendDatabase,
+  BackendLock,
+  BackendMail,
+  BackendProblemDataImporters,
+  BackendRedis,
+  BackendStorage
+} from "./seam";
+import {
+  BACKEND_CONFIG,
+  BACKEND_DATABASE,
+  BACKEND_LOCK,
+  BACKEND_MAIL,
+  BACKEND_REDIS,
+  BACKEND_STORAGE,
+  PROBLEM_DATA_IMPORTERS
+} from "./seam";
 import { getPluginHost } from "./plugin-host";
 
 function resolve<T>(name: string): T {
@@ -37,4 +53,8 @@ export function getStorage(): BackendStorage {
 
 export function getMail(): BackendMail {
   return resolve<BackendMail>(BACKEND_MAIL);
+}
+
+export function getProblemDataImporters(): BackendProblemDataImporters {
+  return resolve<BackendProblemDataImporters>(PROBLEM_DATA_IMPORTERS);
 }
