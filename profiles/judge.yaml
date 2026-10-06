@@ -1,0 +1,14 @@
+active: judge
+
+profiles:
+  judge:
+    bundles:
+      - "@libreoj/judge-config"
+      - "@libreoj/judge-rpc"
+      - "@libreoj/judge-languages"
+      - "@libreoj/judge-checkers"
+      - "@libreoj/judge-task-queue"
+      - "@libreoj/judge-sandbox"
+      - "@libreoj/judge-file"
+      - "@libreoj/judge-compile"
+      - "@libreoj/judge-consumer"
