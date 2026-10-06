@@ -12,10 +12,10 @@
 
 import type { CompileResult, CompileTask } from "./compile";
 import type { Config } from "./config";
+import type { Disposer } from "./posixUtils";
 import type { RPC } from "./rpc";
 import type * as fileModule from "./file";
 import type * as sandboxModule from "./sandbox";
-import type * as taskQueueModule from "./taskQueue";
 
 /** Service name for the loaded judge {@link Config}. */
 export const JUDGE_CONFIG = "judgeConfig";
@@ -43,7 +43,7 @@ export type JudgeRpc = RPC;
 
 /** Runs a task when a working directory is available. */
 export interface TaskQueueService {
-  runTaskQueued: typeof taskQueueModule.runTaskQueued;
+  runTaskQueued<T>(task: (taskWorkingDirectory: string, disposer?: Disposer) => Promise<T>): Promise<T>;
 }
 
 /** Compiles a submission and caches the result. */

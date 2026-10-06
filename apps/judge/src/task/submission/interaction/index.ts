@@ -6,7 +6,8 @@ import { SandboxStatus } from "simple-sandbox";
 import { JudgeInfoInteraction, TestcaseConfig } from "./judgeInfo";
 
 import { SubmissionTask, SubmissionStatus, ProblemSample } from "..";
-import { compile, CompileResultSuccess } from "../../../compile";
+import { CompileResultSuccess } from "../../../compile";
+import { getCompile } from "../../../plugin/services";
 import {
   startSandbox,
   SANDBOX_INSIDE_PATH_BINARY,
@@ -291,7 +292,7 @@ export async function runTask(
 
   task.events.compiling();
 
-  const interactorCompileResult = await compile({
+  const interactorCompileResult = await getCompile().compile({
     language: judgeInfo.interactor.language,
     code: await fs.promises.readFile(getFile(task.extraInfo.testData[judgeInfo.interactor.filename]), "utf-8"),
     compileAndRunOptions: judgeInfo.interactor.compileAndRunOptions
@@ -303,7 +304,7 @@ export async function runTask(
     );
   }
 
-  const compileResult = await compile({
+  const compileResult = await getCompile().compile({
     language: task.extraInfo.submissionContent.language,
     code: task.extraInfo.submissionContent.code,
     compileAndRunOptions: task.extraInfo.submissionContent.compileAndRunOptions,

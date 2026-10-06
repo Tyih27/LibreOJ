@@ -6,7 +6,8 @@ import { SandboxStatus } from "simple-sandbox";
 import { JudgeInfoTraditional, TestcaseConfig } from "./judgeInfo";
 
 import { SubmissionTask, SubmissionStatus, ProblemSample } from "..";
-import { compile, CompileResultSuccess } from "../../../compile";
+import { CompileResultSuccess } from "../../../compile";
+import { getCompile } from "../../../plugin/services";
 import {
   CpuAffinityStrategy,
   runSandbox,
@@ -267,7 +268,7 @@ export async function runTask(
   if (judgeInfo.checker.type === "custom") {
     validateCustomChecker(judgeInfo.checker);
 
-    const compileResult = await compile({
+    const compileResult = await getCompile().compile({
       language: judgeInfo.checker.language,
       code: await fs.promises.readFile(getFile(task.extraInfo.testData[judgeInfo.checker.filename]), "utf-8"),
       compileAndRunOptions: judgeInfo.checker.compileAndRunOptions
@@ -282,7 +283,7 @@ export async function runTask(
     customCheckerCompileResult = compileResult;
   }
 
-  const compileResult = await compile({
+  const compileResult = await getCompile().compile({
     language: task.extraInfo.submissionContent.language,
     code: task.extraInfo.submissionContent.code,
     compileAndRunOptions: task.extraInfo.submissionContent.compileAndRunOptions,

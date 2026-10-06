@@ -2,7 +2,7 @@ import toposort from "toposort";
 import winston from "winston";
 
 import { Disposer } from "../../posixUtils";
-import { runTaskQueued } from "../../taskQueue";
+import { getTaskQueue } from "../../plugin/services";
 
 import { SubmissionTask, ProblemSample, SubmissionStatus } from ".";
 
@@ -113,7 +113,7 @@ export async function runCommonTask<
 
     const result =
       existingResult ||
-      (await runTaskQueued(async (taskWorkingDirectory, disposer) => {
+      (await getTaskQueue().runTaskQueued(async (taskWorkingDirectory, disposer) => {
         if (isSample) {
           winston.verbose(`Running sample testcase ${sampleId}`);
           task.events.sampleTestcaseRunning(sampleId);

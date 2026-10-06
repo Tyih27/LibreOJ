@@ -5,7 +5,8 @@ import { v4 as uuid } from "uuid";
 import { JudgeInfoSubmitAnswer, TestcaseConfig } from "./judgeInfo";
 
 import { SubmissionTask, ProblemSample } from "..";
-import { compile, CompileResultSuccess } from "../../../compile";
+import { CompileResultSuccess } from "../../../compile";
+import { getCompile } from "../../../plugin/services";
 import { SANDBOX_INSIDE_PATH_WORKING } from "../../../sandbox";
 import { serverSideConfig } from "../../../config";
 import { safelyJoinPath } from "../../../utils";
@@ -198,7 +199,7 @@ export async function runTask(
       if (judgeInfo.checker.type === "custom") {
         validateCustomChecker(judgeInfo.checker);
 
-        const compileResult = await compile({
+        const compileResult = await getCompile().compile({
           language: judgeInfo.checker.language,
           code: await fs.promises.readFile(getFile(task.extraInfo.testData[judgeInfo.checker.filename]), "utf-8"),
           compileAndRunOptions: judgeInfo.checker.compileAndRunOptions

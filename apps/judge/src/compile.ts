@@ -16,10 +16,10 @@ import {
   SANDBOX_INSIDE_PATH_BINARY,
   CpuAffinityStrategy
 } from "./sandbox";
-import config, { serverSideConfig } from "./config";
-import { runTaskQueued } from "./taskQueue";
+import { serverSideConfig, type Config } from "./config";
 import { getFile, getFileHash } from "./file";
 import * as fsNative from "./fsNative";
+import type { CompileService, TaskQueueService } from "./seam";
 
 export interface CompilationConfig extends SandboxConfigBase {
   messageFile?: string; // The file contains the message to display for user (in the binary directory)
@@ -104,17 +104,23 @@ export class CompileResultSuccess implements CompileResult {
 // Another cache set operation with the same task will overwrite the files (and may cause the judge task using a corrupted file)
 // Use a random uuid as the key instead to prevent this
 class CompileResultCache {
-  private readonly lruCache = new LruCache<string, CompileResultSuccess>({
-    maxSize: config.binaryCacheMaxSize,
-    sizeCalculation: result => result.binaryDirectorySize,
-    dispose: (result, compileTaskHash) => {
-      winston.verbose(`dispose() from compile result cache: ${compileTaskHash}`);
-      setImmediate(() => {
-        // It's safe NOT to await it..
-        result.dereference().catch(e => winston.error(`Failed to remove compile result on evicting cache: ${e.stack}`));
-      });
-    }
-  });
+  private readonly lruCache: LruCache<string, CompileResultSuccess>;
+
+  constructor(private readonly config: Config) {
+    this.lruCache = new LruCache<string, CompileResultSuccess>({
+      maxSize: config.binaryCacheMaxSize,
+      sizeCalculation: result => result.binaryDirectorySize,
+      dispose: (result, compileTaskHash) => {
+        winston.verbose(`dispose() from compile result cache: ${compileTaskHash}`);
+        setImmediate(() => {
+          // It's safe NOT to await it..
+          result
+            .dereference()
+            .catch(e => winston.error(`Failed to remove compile result on evicting cache: ${e.stack}`));
+        });
+      }
+    });
+  }
 
   // The set()/get()'s returned result is reference()-ed
   // and must be dereference()-ed
@@ -129,7 +135,7 @@ class CompileResultCache {
   public async set(compileTaskHash: string, result: CompileResultSuccess): Promise<CompileResultSuccess> {
     if (this.lruCache.has(compileTaskHash)) return this.lruCache.get(compileTaskHash).reference();
 
-    const newCompileResult = await result.copyTo(safelyJoinPath(config.binaryCacheStore, uuid()));
+    const newCompileResult = await result.copyTo(safelyJoinPath(this.config.binaryCacheStore, uuid()));
     newCompileResult.reference();
     this.lruCache.set(compileTaskHash, newCompileResult);
     return newCompileResult.reference();
@@ -141,57 +147,79 @@ interface PendingCompileTask {
   promise: Promise<void>;
 }
 
-// If there're multiple calls to compile() with the same compileTask, it's to prevent the task to be compiled multiple times
-// compileTaskHash -> Promise of task
-const pendingCompileTasks: Map<string, PendingCompileTask> = new Map();
-const compileResultCache = new CompileResultCache();
+/**
+ * Builds the compilation front end. The result cache and the map of in-flight compilations are created here, when the
+ * plugin is applied, rather than at module import time, so importing this module has no side effect; the module-level
+ * singletons are gone. Compilation is scheduled through the injected task queue.
+ */
+export function createCompileService(config: Config, taskQueue: TaskQueueService): CompileService {
+  // If there're multiple calls to compile() with the same compileTask, it's to prevent the task to be compiled multiple times
+  // compileTaskHash -> Promise of task
+  const pendingCompileTasks: Map<string, PendingCompileTask> = new Map();
+  const compileResultCache = new CompileResultCache(config);
 
-export async function compile(compileTask: CompileTask): Promise<CompileResult> {
-  const languageConfig = getLanguage(compileTask.language);
+  async function compile(compileTask: CompileTask): Promise<CompileResult> {
+    const languageConfig = getLanguage(compileTask.language);
 
-  const compileTaskHash = await hashCompileTask(compileTask);
+    const compileTaskHash = await hashCompileTask(compileTask);
 
-  const cachedResult = compileResultCache.get(compileTaskHash);
-  if (cachedResult) {
-    winston.verbose(`Use cached compile reslt for ${compileTaskHash}`);
-    return cachedResult;
+    const cachedResult = compileResultCache.get(compileTaskHash);
+    if (cachedResult) {
+      winston.verbose(`Use cached compile reslt for ${compileTaskHash}`);
+      return cachedResult;
+    }
+
+    let pendingCompileTask = pendingCompileTasks.get(compileTaskHash);
+    if (!pendingCompileTask) {
+      // Use a array of functions to ensure every calls to compile() of this task could get
+      // a valid CompileResultSuccess object (with positive referenceCount)
+      // I don't think "await promise" is guaranteed to return in a synchronous flow after the promise resolved
+      const resultConsumers = [];
+      pendingCompileTasks.set(
+        compileTaskHash,
+        (pendingCompileTask = {
+          resultConsumers,
+          promise: taskQueue
+            .runTaskQueued(async taskWorkingDirectory => {
+              // The compileResult is already reference()-ed
+              const compileResult = await doCompile(
+                config,
+                compileResultCache,
+                compileTask,
+                compileTaskHash,
+                languageConfig,
+                taskWorkingDirectory
+              );
+              winston.verbose(`Compile result: ${JSON.stringify(compileResult)}`);
+
+              for (const resultConsumer of resultConsumers)
+                resultConsumer(
+                  compileResult instanceof CompileResultSuccess ? compileResult.reference() : compileResult
+                );
+
+              if (compileResult instanceof CompileResultSuccess) await compileResult.dereference();
+            })
+            .finally(() => pendingCompileTasks.delete(compileTaskHash))
+        })
+      );
+    }
+
+    let result: CompileResult;
+    pendingCompileTask.resultConsumers.push(r => {
+      result = r;
+    });
+    await pendingCompileTask.promise;
+
+    return result;
   }
 
-  let pendingCompileTask = pendingCompileTasks.get(compileTaskHash);
-  if (!pendingCompileTask) {
-    // Use a array of functions to ensure every calls to compile() of this task could get
-    // a valid CompileResultSuccess object (with positive referenceCount)
-    // I don't think "await promise" is guaranteed to return in a synchronous flow after the promise resolved
-    const resultConsumers = [];
-    pendingCompileTasks.set(
-      compileTaskHash,
-      (pendingCompileTask = {
-        resultConsumers,
-        promise: runTaskQueued(async taskWorkingDirectory => {
-          // The compileResult is already reference()-ed
-          const compileResult = await doCompile(compileTask, compileTaskHash, languageConfig, taskWorkingDirectory);
-          winston.verbose(`Compile result: ${JSON.stringify(compileResult)}`);
-
-          for (const resultConsumer of resultConsumers)
-            resultConsumer(compileResult instanceof CompileResultSuccess ? compileResult.reference() : compileResult);
-
-          if (compileResult instanceof CompileResultSuccess) await compileResult.dereference();
-        }).finally(() => pendingCompileTasks.delete(compileTaskHash))
-      })
-    );
-  }
-
-  let result: CompileResult;
-  pendingCompileTask.resultConsumers.push(r => {
-    result = r;
-  });
-  await pendingCompileTask.promise;
-
-  return result;
+  return { compile };
 }
 
 // Return reference()-ed result if success
 async function doCompile(
+  config: Config,
+  compileResultCache: CompileResultCache,
   compileTask: CompileTask,
   compileTaskHash: string,
   languageConfig: LanguageConfig<unknown>,
