@@ -1,9 +1,9 @@
 import type { PluginDefinition } from "@libreoj/plugin-core";
 
-import config from "../config";
+import type { Config } from "../config";
 import { createSandboxService } from "../sandbox";
 import type { RPC } from "../rpc";
-import { JUDGE_RPC, JUDGE_SANDBOX } from "../seam";
+import { JUDGE_CONFIG, JUDGE_RPC, JUDGE_SANDBOX } from "../seam";
 
 /**
  * The plugin that provides the `judgeSandbox` seam. Applying it builds the sandbox runner through
@@ -15,9 +15,9 @@ import { JUDGE_RPC, JUDGE_SANDBOX } from "../seam";
  */
 export const sandboxPlugin: PluginDefinition = {
   name: "@libreoj/judge-sandbox",
-  inject: { required: [JUDGE_RPC] },
+  inject: { required: [JUDGE_CONFIG, JUDGE_RPC] },
   provide: [JUDGE_SANDBOX],
   apply(ctx) {
-    ctx.set(JUDGE_SANDBOX, createSandboxService(config, ctx.get<RPC>(JUDGE_RPC)));
+    ctx.set(JUDGE_SANDBOX, createSandboxService(ctx.get<Config>(JUDGE_CONFIG), ctx.get<RPC>(JUDGE_RPC)));
   }
 };

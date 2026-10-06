@@ -23,13 +23,6 @@ import yaml from "js-yaml";
 import { ensureDirectoryEmptySync } from "./utils";
 import * as fsNative from "./fsNative";
 
-winston.add(
-  new winston.transports.Console({
-    level: process.env.LIBREOJ_JUDGE_LOG_LEVEL || "info",
-    format: winston.format.combine(winston.format.cli())
-  })
-);
-
 export class SandboxConfig {
   @IsString()
   rootfs: string;
@@ -124,62 +117,78 @@ export class Config {
   cpuAffinity: CpuAffinityConfig;
 }
 
-const filePath = process.env.LIBREOJ_JUDGE_CONFIG_FILE;
-if (!filePath) {
-  winston.error("Please specify configuration file with environment variable LIBREOJ_JUDGE_CONFIG_FILE");
-  process.exit(1);
+/**
+ * Reads and validates the judge configuration. Fatal configuration problems (a missing config file, schema
+ * validation errors, duplicated working directories) log and exit the process, exactly as the previous import-time
+ * checks did; the returned object has passed every error-level check.
+ */
+export function loadConfig(): Config {
+  const filePath = process.env.LIBREOJ_JUDGE_CONFIG_FILE;
+  if (!filePath) {
+    winston.error("Please specify configuration file with environment variable LIBREOJ_JUDGE_CONFIG_FILE");
+    process.exit(1);
+  }
+
+  const parsedConfig = yaml.load(fs.readFileSync(filePath).toString("utf-8"));
+  const config = plainToClass(Config, parsedConfig);
+  const errors = validateSync(config);
+  if (errors.length > 0) {
+    winston.error(`Couldn't parse config file: ${JSON.stringify(errors, null, 2)}`);
+    process.exit(1);
+  }
+
+  // Check config (errors)
+  if (new Set(config.taskWorkingDirectories.map(path => resolve(path))).size !== config.taskWorkingDirectories.length) {
+    winston.error(`Duplicated paths in config.taskWorkingDirectories, please check the config file.`);
+    process.exit(1);
+  }
+
+  return config;
 }
 
-const parsedConfig = yaml.load(fs.readFileSync(filePath).toString("utf-8"));
-const config = plainToClass(Config, parsedConfig);
-const errors = validateSync(config);
-if (errors.length > 0) {
-  winston.error(`Couldn't parse config file: ${JSON.stringify(errors, null, 2)}`);
-  process.exit(1);
-}
+/**
+ * Applies the configuration's filesystem effects and warning-level checks: creating the data store, clearing the
+ * binary cache, verifying each task working directory is a tmpfs mount, and warning about settings that are likely
+ * misconfigured. Called by the config plugin at apply time instead of at module import time.
+ */
+export function initializeConfig(config: Config): void {
+  // Create directories
+  for (const dir of config.taskWorkingDirectories) {
+    checkTaskWorkingDirectory(dir);
+  }
 
-// Check config (errors)
-if (new Set(config.taskWorkingDirectories.map(path => resolve(path))).size !== config.taskWorkingDirectories.length) {
-  winston.error(`Duplicated paths in config.taskWorkingDirectories, please check the config file.`);
-  process.exit(1);
-}
+  fsNative.ensureDirSync(config.dataStore);
+  ensureDirectoryEmptySync(config.binaryCacheStore);
 
-// Create directories
-for (const dir of config.taskWorkingDirectories) {
-  checkTaskWorkingDirectory(dir);
-}
+  // Check config (warnings)
+  if (config.taskConsumingThreads > 3) {
+    winston.warn(
+      `config.taskConsumingThreads = ${config.taskConsumingThreads} is too large. Please consider running more judge clients on more machines.`
+    );
+  }
 
-fsNative.ensureDirSync(config.dataStore);
-ensureDirectoryEmptySync(config.binaryCacheStore);
+  if (config.maxConcurrentDownloads > 20) {
+    winston.warn(
+      `config.maxConcurrentDownloads = ${config.maxConcurrentDownloads}. Too large value may cause network problems.`
+    );
+  }
 
-// Check config (warnings)
-if (config.taskConsumingThreads > 3) {
-  winston.warn(
-    `config.taskConsumingThreads = ${config.taskConsumingThreads} is too large. Please consider running more judge clients on more machines.`
-  );
-}
+  const cpuCount = os.cpus().length;
+  if (config.maxConcurrentTasks > cpuCount) {
+    winston.warn(
+      `config.maxConcurrentTasks = ${config.maxConcurrentTasks}, which is lerger than the number of CPU cores (= ${cpuCount}). The timing of judge tasks will be much more unstable.`
+    );
+  }
 
-if (config.maxConcurrentDownloads > 20) {
-  winston.warn(
-    `config.maxConcurrentDownloads = ${config.maxConcurrentDownloads}. Too large value may cause network problems.`
-  );
-}
+  if (config.taskWorkingDirectories.length < config.maxConcurrentTasks) {
+    winston.warn(
+      `Length of config.taskWorkingDirectories (= ${config.taskWorkingDirectories.length}) < config.maxConcurrentTasks (= ${config.maxConcurrentDownloads}). Max concurrent tasks will be ${config.taskWorkingDirectories.length}.`
+    );
+  }
 
-const cpuCount = os.cpus().length;
-if (config.maxConcurrentTasks > cpuCount) {
-  winston.warn(
-    `config.maxConcurrentTasks = ${config.maxConcurrentTasks}, which is lerger than the number of CPU cores (= ${cpuCount}). The timing of judge tasks will be much more unstable.`
-  );
-}
-
-if (config.taskWorkingDirectories.length < config.maxConcurrentTasks) {
-  winston.warn(
-    `Length of config.taskWorkingDirectories (= ${config.taskWorkingDirectories.length}) < config.maxConcurrentTasks (= ${config.maxConcurrentDownloads}). Max concurrent tasks will be ${config.taskWorkingDirectories.length}.`
-  );
-}
-
-for (const dir of config.taskWorkingDirectories) {
-  ensureDirectoryEmptySync(dir);
+  for (const dir of config.taskWorkingDirectories) {
+    ensureDirectoryEmptySync(dir);
+  }
 }
 
 // Some config are from server
@@ -206,7 +215,7 @@ function checkTaskWorkingDirectory(path: string) {
 
 export const serverSideConfig = {} as ServerSideConfig;
 // Some of the config items are configured in server
-export function updateServerSideConfig(newServerSideConfig: unknown) {
+export function updateServerSideConfig(config: Config, newServerSideConfig: unknown) {
   Object.assign(serverSideConfig, newServerSideConfig);
 
   if (config.binaryCacheMaxSize < serverSideConfig.limit.outputSize) {
@@ -228,5 +237,3 @@ export function updateServerSideConfig(newServerSideConfig: unknown) {
   checkLimitTooLarge("dataDisplay", 1024); // 1 KiB
   checkLimitTooLarge("stderrDisplay", 10240); // 10 KiB
 }
-
-export default config;

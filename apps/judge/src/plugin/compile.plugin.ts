@@ -1,9 +1,10 @@
 import type { PluginDefinition } from "@libreoj/plugin-core";
 
-import config from "../config";
+import type { Config } from "../config";
 import { createCompileService } from "../compile";
 import {
   JUDGE_COMPILE,
+  JUDGE_CONFIG,
   JUDGE_FILE,
   JUDGE_SANDBOX,
   JUDGE_TASK_QUEUE,
@@ -23,13 +24,13 @@ import {
  */
 export const compilePlugin: PluginDefinition = {
   name: "@libreoj/judge-compile",
-  inject: { required: [JUDGE_TASK_QUEUE, JUDGE_SANDBOX, JUDGE_FILE] },
+  inject: { required: [JUDGE_CONFIG, JUDGE_TASK_QUEUE, JUDGE_SANDBOX, JUDGE_FILE] },
   provide: [JUDGE_COMPILE],
   apply(ctx) {
     ctx.set(
       JUDGE_COMPILE,
       createCompileService(
-        config,
+        ctx.get<Config>(JUDGE_CONFIG),
         ctx.get<TaskQueueService>(JUDGE_TASK_QUEUE),
         ctx.get<SandboxService>(JUDGE_SANDBOX),
         ctx.get<FileService>(JUDGE_FILE)

@@ -1,15 +1,17 @@
+import "./logging";
 import "reflect-metadata";
 import * as winston from "winston";
 import { InlineResolver, PluginHost } from "@libreoj/plugin-core";
 
-import config from "./config";
 import { checkersPlugin } from "./plugin/checkers.plugin";
 import { compilePlugin } from "./plugin/compile.plugin";
+import { configPlugin } from "./plugin/config.plugin";
 import { filePlugin } from "./plugin/file.plugin";
 import { languagesPlugin } from "./plugin/languages.plugin";
 import { setPluginHost } from "./plugin/plugin-host";
 import { rpcPlugin } from "./plugin/rpc.plugin";
 import { sandboxPlugin } from "./plugin/sandbox.plugin";
+import { getConfig } from "./plugin/services";
 import { taskQueuePlugin } from "./plugin/taskQueue.plugin";
 import type { RPC } from "./rpc";
 import { JUDGE_RPC } from "./seam";
@@ -19,6 +21,7 @@ if (process.getuid() !== 0) {
   process.exit(1);
 }
 
+const JUDGE_CONFIG_BUNDLE = "@libreoj/judge-config";
 const JUDGE_LANGUAGES_BUNDLE = "@libreoj/judge-languages";
 const JUDGE_CHECKERS_BUNDLE = "@libreoj/judge-checkers";
 const JUDGE_TASK_QUEUE_BUNDLE = "@libreoj/judge-task-queue";
@@ -33,6 +36,7 @@ const JUDGE_COMPILE_BUNDLE = "@libreoj/judge-compile";
 // host awaits during `load`, so the task consumer threads are still started only after the connection is ready.
 const host = new PluginHost({
   resolver: new InlineResolver({
+    [JUDGE_CONFIG_BUNDLE]: configPlugin,
     [JUDGE_LANGUAGES_BUNDLE]: languagesPlugin,
     [JUDGE_CHECKERS_BUNDLE]: checkersPlugin,
     [JUDGE_TASK_QUEUE_BUNDLE]: taskQueuePlugin,
@@ -50,6 +54,7 @@ host
   .load([
     {
       bundles: [
+        JUDGE_CONFIG_BUNDLE,
         JUDGE_LANGUAGES_BUNDLE,
         JUDGE_CHECKERS_BUNDLE,
         JUDGE_TASK_QUEUE_BUNDLE,
@@ -62,5 +67,5 @@ host
   ])
   .then(() => {
     const rpc = host.root.get<RPC>(JUDGE_RPC);
-    for (let i = 0; i < config.taskConsumingThreads; i++) rpc.startTaskConsumerThread(i);
+    for (let i = 0; i < getConfig().taskConsumingThreads; i++) rpc.startTaskConsumerThread(i);
   });

@@ -1,7 +1,8 @@
 import type { PluginDefinition } from "@libreoj/plugin-core";
 
+import type { Config } from "../config";
 import { createRpc, type RPC } from "../rpc";
-import { JUDGE_RPC } from "../seam";
+import { JUDGE_CONFIG, JUDGE_RPC } from "../seam";
 
 /**
  * The plugin that provides the `judgeRpc` seam. Applying it builds the RPC client through {@link createRpc} and
@@ -13,9 +14,10 @@ import { JUDGE_RPC } from "../seam";
  */
 export const rpcPlugin: PluginDefinition = {
   name: "@libreoj/judge-rpc",
+  inject: { required: [JUDGE_CONFIG] },
   provide: [JUDGE_RPC],
   apply(ctx) {
-    ctx.set(JUDGE_RPC, createRpc());
+    ctx.set(JUDGE_RPC, createRpc(ctx.get<Config>(JUDGE_CONFIG)));
   },
   async start(ctx) {
     await ctx.get<RPC>(JUDGE_RPC).connect();

@@ -1,8 +1,8 @@
 import type { PluginDefinition } from "@libreoj/plugin-core";
 
-import config from "../config";
+import type { Config } from "../config";
 import { createTaskQueue } from "../taskQueue";
-import { JUDGE_TASK_QUEUE } from "../seam";
+import { JUDGE_CONFIG, JUDGE_TASK_QUEUE } from "../seam";
 
 /**
  * The plugin that provides the `judgeTaskQueue` seam. Applying it builds the working-directory queue through
@@ -13,8 +13,9 @@ import { JUDGE_TASK_QUEUE } from "../seam";
  */
 export const taskQueuePlugin: PluginDefinition = {
   name: "@libreoj/judge-task-queue",
+  inject: { required: [JUDGE_CONFIG] },
   provide: [JUDGE_TASK_QUEUE],
   apply(ctx) {
-    ctx.set(JUDGE_TASK_QUEUE, createTaskQueue(config));
+    ctx.set(JUDGE_TASK_QUEUE, createTaskQueue(ctx.get<Config>(JUDGE_CONFIG)));
   }
 };

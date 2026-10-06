@@ -3,7 +3,7 @@ import winston from "winston";
 import lodashDebounce from "lodash.debounce";
 import SocketIOParser from "socket.io-msgpack-parser";
 
-import config, { updateServerSideConfig } from "./config";
+import { updateServerSideConfig, type Config } from "./config";
 import taskHandler, { Task } from "./task";
 
 import getSystemInfo from "./systemInfo";
@@ -12,6 +12,8 @@ import { CanceledError } from "./error";
 export class RPC {
   // eslint-disable-next-line no-undef
   private socket: Socket;
+
+  constructor(private readonly config: Config) {}
 
   /**
    * For each task:
@@ -29,13 +31,13 @@ export class RPC {
       this.socket.close();
     }
 
-    let { serverUrl } = config;
+    let { serverUrl } = this.config;
     while (serverUrl.endsWith("/")) serverUrl = serverUrl.slice(0, -1);
     this.socket = SocketIO(`${serverUrl}/judge`, {
       path: "/api/socket",
       transports: ["websocket"],
       query: {
-        key: config.key
+        key: this.config.key
       },
       ...{
         maxHttpBufferSize: 1e9,
@@ -62,7 +64,7 @@ export class RPC {
       new Promise<void>(resolve => {
         this.socket.on("ready", async (name: string, serverSideConfig: unknown) => {
           winston.info(`Successfully authorized as ${name}`);
-          updateServerSideConfig(serverSideConfig);
+          updateServerSideConfig(this.config, serverSideConfig);
           this.socket.emit("systemInfo", await getSystemInfo());
 
           resolve();
@@ -80,9 +82,9 @@ export class RPC {
   async withTimeout<T>(promise: Promise<T>): Promise<T> {
     return await new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
-        winston.error(`Timed out after ${config.rpcTimeout} milliseconds, assuming disconnected`);
+        winston.error(`Timed out after ${this.config.rpcTimeout} milliseconds, assuming disconnected`);
         this.restart();
-      }, config.rpcTimeout);
+      }, this.config.rpcTimeout);
 
       function onPromiseReady(action: () => void) {
         clearTimeout(timer);
@@ -209,6 +211,6 @@ export class RPC {
   }
 }
 
-export function createRpc(): RPC {
-  return new RPC();
+export function createRpc(config: Config): RPC {
+  return new RPC(config);
 }

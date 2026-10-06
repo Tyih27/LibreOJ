@@ -8,7 +8,7 @@ import AgentKeepAlive from "agentkeepalive";
 import streamToString from "stream-to-string";
 
 import * as fsNative from "./fsNative";
-import config from "./config";
+import { getConfig } from "./plugin/services";
 
 export interface MappedPath {
   outside: string;
@@ -138,14 +138,14 @@ export const download = (() => {
 
   return async (originalUrlString: string, destination: string, description: string) => {
     let url = originalUrlString;
-    if (config.downloadEndpointOverride) {
+    if (getConfig().downloadEndpointOverride) {
       const originalUrl = new URL(originalUrlString);
-      const overrideUrl = new URL(config.downloadEndpointOverride);
+      const overrideUrl = new URL(getConfig().downloadEndpointOverride);
       overrideUrl.pathname = originalUrl.pathname;
       overrideUrl.search = originalUrl.search;
       url = overrideUrl.toString();
     }
-    for (let retry = config.downloadRetry - 1; retry >= 0; retry--) {
+    for (let retry = getConfig().downloadRetry - 1; retry >= 0; retry--) {
       const fileStream: fs.WriteStream = fs.createWriteStream(destination);
       const abortController = new AbortController();
 
@@ -160,7 +160,7 @@ export const download = (() => {
 
         const timeoutTimer = setTimeout(() => {
           abortController.abort();
-        }, config.downloadTimeout);
+        }, getConfig().downloadTimeout);
 
         response.data.pipe(fileStream);
 
@@ -181,7 +181,9 @@ export const download = (() => {
 
         if (abortController.signal.aborted) {
           throw new Error(
-            `Failed to download ${description}: timed-out after ${config.downloadTimeout}ms for ${config.downloadRetry} times`
+            `Failed to download ${description}: timed-out after ${getConfig().downloadTimeout}ms for ${
+              getConfig().downloadRetry
+            } times`
           );
         }
 
