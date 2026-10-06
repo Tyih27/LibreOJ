@@ -22,7 +22,7 @@ import { getProblemDataImporters } from "../../../plugin/services";
 
 import { ProblemTypeServiceInterface } from "../../problem-type-service.interface";
 
-const IMPORT_CONTEXT: ImportContext = { mode: "input-to-output", optional: false };
+const IMPORT_CONTEXT: ImportContext = { mode: "input-to-output", optional: false, problemType: "traditional" };
 
 @Injectable()
 export class ProblemTypeTraditionalService
@@ -60,12 +60,20 @@ export class ProblemTypeTraditionalService
     judgeInfo: ProblemJudgeInfoTraditional,
     testData: ProblemFileEntity[]
   ): ProblemJudgeInfoTraditional {
-    return Array.isArray(judgeInfo.subtasks)
-      ? judgeInfo
-      : {
-          ...judgeInfo,
-          subtasks: getProblemDataImporters().resolve(testData, IMPORT_CONTEXT).import(testData, IMPORT_CONTEXT)
-        };
+    const importer = getProblemDataImporters().resolve(testData, IMPORT_CONTEXT);
+    const result = importer.import(testData, IMPORT_CONTEXT);
+
+    const subtasks =
+      result.subtasks && (importer.authoritative || !Array.isArray(judgeInfo.subtasks))
+        ? (result.subtasks as ProblemJudgeInfoTraditional["subtasks"])
+        : judgeInfo.subtasks;
+
+    return {
+      ...judgeInfo,
+      subtasks,
+      ...(result.checker ? { checker: result.checker } : {}),
+      ...(result.extraSourceFiles ? { extraSourceFiles: result.extraSourceFiles } : {})
+    };
   }
 
   validateAndFilterJudgeInfo(

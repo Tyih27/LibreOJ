@@ -32,6 +32,8 @@ import { PermissionService, PermissionObjectType } from "../permission/permissio
 import { UserService } from "../user/user.service";
 import { GroupService } from "../group/group.service";
 import { FileService } from "../file/file.service";
+import { logger } from "../logger";
+import { PROBLEM_DATA_CONFIG_FILENAMES } from "../problem-data-import/uoj-config";
 import { ConfigService } from "../config/config.service";
 import { RedisService } from "../redis/redis.service";
 import { LockService } from "../redis/lock.service";
@@ -555,12 +557,33 @@ export class ProblemService {
     if (cachedResult) return cachedResult;
 
     const [judgeInfo, submittable] = await this.getProblemJudgeInfo(problem);
-    const preprocessed = this.problemTypeFactoryService
-      .type(problem.type)
-      .preprocessJudgeInfo(judgeInfo, await this.getProblemFiles(problem, ProblemFileType.TestData));
+    const testData = await this.getProblemFiles(problem, ProblemFileType.TestData);
+    await this.loadProblemDataConfigContents(testData);
+    const preprocessed = this.problemTypeFactoryService.type(problem.type).preprocessJudgeInfo(judgeInfo, testData);
     await this.redisService.cacheSet(key, JSON.stringify([preprocessed, submittable]));
 
     return [preprocessed, submittable];
+  }
+
+  /**
+   * Loads the content of any testdata configuration file (`subtasks.json` / `data.yml`) into its entity.
+   *
+   * The file list carries metadata only; the content lives in object storage. The problem data importers inspect it to
+   * derive subtasks/checker/interactor, so it is fetched here -- on the cached preprocessing path -- before the
+   * synchronous `preprocessJudgeInfo` runs. A read failure is not fatal: the importer falls back to auto-matching.
+   */
+  private async loadProblemDataConfigContents(testData: ProblemFileEntity[]): Promise<void> {
+    await Promise.all(
+      testData
+        .filter(file => PROBLEM_DATA_CONFIG_FILENAMES.includes(file.filename.toLowerCase()))
+        .map(async file => {
+          try {
+            file.content = await this.fileService.getFileContent(file.uuid);
+          } catch (e) {
+            logger.warn(`Failed to read problem data config ${file.filename}: ${e}`);
+          }
+        })
+    );
   }
 
   /**

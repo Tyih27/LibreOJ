@@ -24,4 +24,12 @@ export class ProblemFileEntity {
 
   @Column({ type: "char", length: 36 })
   uuid: string;
+
+  /**
+   * The file's textual content, if a caller has loaded it.
+   *
+   * This is not a column: it is populated transiently for importers that inspect configuration files (see
+   * `problem-data-import`). It is never persisted and is `undefined` on entities loaded from the database.
+   */
+  content?: string;
 }

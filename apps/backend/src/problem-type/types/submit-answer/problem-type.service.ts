@@ -21,7 +21,7 @@ import { getProblemDataImporters } from "../../../plugin/services";
 
 import { ProblemTypeServiceInterface } from "../../problem-type-service.interface";
 
-const IMPORT_CONTEXT: ImportContext = { mode: "output-to-input", optional: true };
+const IMPORT_CONTEXT: ImportContext = { mode: "output-to-input", optional: true, problemType: "submit-answer" };
 
 @Injectable()
 export class ProblemTypeSubmitAnswerService
@@ -56,12 +56,19 @@ export class ProblemTypeSubmitAnswerService
     judgeInfo: ProblemJudgeInfoSubmitAnswer,
     testData: ProblemFileEntity[]
   ): ProblemJudgeInfoSubmitAnswer {
-    return Array.isArray(judgeInfo.subtasks)
-      ? judgeInfo
-      : {
-          ...judgeInfo,
-          subtasks: getProblemDataImporters().resolve(testData, IMPORT_CONTEXT).import(testData, IMPORT_CONTEXT)
-        };
+    const importer = getProblemDataImporters().resolve(testData, IMPORT_CONTEXT);
+    const result = importer.import(testData, IMPORT_CONTEXT);
+
+    const subtasks =
+      result.subtasks && (importer.authoritative || !Array.isArray(judgeInfo.subtasks))
+        ? (result.subtasks as ProblemJudgeInfoSubmitAnswer["subtasks"])
+        : judgeInfo.subtasks;
+
+    return {
+      ...judgeInfo,
+      subtasks,
+      ...(result.checker ? { checker: result.checker } : {})
+    };
   }
 
   validateAndFilterJudgeInfo(

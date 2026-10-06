@@ -22,7 +22,7 @@ import { getProblemDataImporters } from "../../../plugin/services";
 
 import { ProblemTypeServiceInterface } from "../../problem-type-service.interface";
 
-const IMPORT_CONTEXT: ImportContext = { mode: "input-to-output", optional: true };
+const IMPORT_CONTEXT: ImportContext = { mode: "input-to-output", optional: true, problemType: "interaction" };
 
 @Injectable()
 export class ProblemTypeInteractionService
@@ -57,12 +57,20 @@ export class ProblemTypeInteractionService
     judgeInfo: ProblemJudgeInfoInteraction,
     testData: ProblemFileEntity[]
   ): ProblemJudgeInfoInteraction {
-    return Array.isArray(judgeInfo.subtasks)
-      ? judgeInfo
-      : {
-          ...judgeInfo,
-          subtasks: getProblemDataImporters().resolve(testData, IMPORT_CONTEXT).import(testData, IMPORT_CONTEXT)
-        };
+    const importer = getProblemDataImporters().resolve(testData, IMPORT_CONTEXT);
+    const result = importer.import(testData, IMPORT_CONTEXT);
+
+    const subtasks =
+      result.subtasks && (importer.authoritative || !Array.isArray(judgeInfo.subtasks))
+        ? (result.subtasks as unknown as ProblemJudgeInfoInteraction["subtasks"])
+        : judgeInfo.subtasks;
+
+    return {
+      ...judgeInfo,
+      subtasks,
+      ...(result.interactor ? { interactor: result.interactor } : {}),
+      ...(result.extraSourceFiles ? { extraSourceFiles: result.extraSourceFiles } : {})
+    };
   }
 
   /* eslint-disable no-throw-literal */

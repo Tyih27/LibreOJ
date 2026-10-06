@@ -1,4 +1,4 @@
-import type { ProblemDataImporter } from "./importer";
+import type { ProblemDataImportResult, ProblemDataImporter } from "./importer";
 
 import type { ProblemFileEntity } from "../problem/problem-file.entity";
 import { autoMatchInputToOutput, autoMatchOutputToInput } from "../problem-type/common/auto-match-input-output";
@@ -16,9 +16,12 @@ export const nativeImporter: ProblemDataImporter = {
   detect(): boolean {
     return true;
   },
-  import(testData: ProblemFileEntity[], context): ReturnType<ProblemDataImporter["import"]> {
-    return context.mode === "output-to-input"
-      ? autoMatchOutputToInput(testData, context.optional)
-      : autoMatchInputToOutput(testData, context.optional);
+  import(testData: ProblemFileEntity[], context): ProblemDataImportResult {
+    return {
+      subtasks:
+        context.mode === "output-to-input"
+          ? autoMatchOutputToInput(testData, context.optional)
+          : autoMatchInputToOutput(testData, context.optional)
+    };
   }
 };

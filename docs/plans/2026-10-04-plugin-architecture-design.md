@@ -313,6 +313,19 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **子任务保持绑定**：subtasks 仍由导入器/题型产出并校验，不单独拆出评分 seam。
 - 后续（逐个小步）：D2 起新增格式 importer（如 `subtasks.json` 配置格式、Lemon/HUSTOJ/domjudge 命名约定），每个一个插件。
 
+#### D2b（已实现）：UOJ 风格数据配置 importer
+- 配置文件：测试数据根下的 `subtasks.json`(JSON) 或 `data.yml`/`data.yaml`(UOJ 原 YAML)，按扩展名选解析器。
+- 对齐 UOJ `data.yml` 并扩展：`subtasks[{ score, type: sum|mul|min, cases[] , testcases[]? }]`、`inputFile`/`outputFile`/`userOutput` 模板（`#`→caseId）、
+  `specialJudge{ language, fileName, interface? }`（interface 默认 `testlib`）、`interactor{ language, fileName, interface? }`（默认 `stdio`）、
+  `extraSourceFiles[{ language, files[{name,dest}] }]`；扩展支持显式 testcases、逐点/逐子任务 points 与 time/memory。
+- importer 契约升级为返回**部分 judgeInfo**（`subtasks`/`checker`/`interactor`/`extraSourceFiles`）；`authoritative: true` 表示**结果覆盖** judgeInfo（P1），
+  内置 `native` 为 `authoritative: false`（仅在 `judgeInfo.subtasks` 非数组时填充 subtasks，保持旧行为）。
+- 语言名映射复用抽取出的 `getLanguageAndOptions`（原在迁移代码，现移入 `problem-data-import/legacy-language-options.ts`，迁移行为不变）。
+- **内容来源**：配置文件内容在对象存储；`ProblemService.getProblemPreprocessedJudgeInfo`（async、带缓存）在调用同步的 `preprocessJudgeInfo` 前，
+  经 `FileService.getFileContent(uuid)` 把配置内容载入 `ProblemFileEntity.content`（读取失败只告警 → 回退 native）。
+- 坏配置**直接报错**（不回退），并在 importer 内校验被引用文件存在。judge 侧**无需改动**（产出的 judgeInfo 字段与现有契约一致）。
+- 测试：`apps/backend/test/problem-data-import.test.ts`（`node:test` + `tsx`）。
+
 ### 14.2 明确不做（后置）
 - **problem-type 整体插件化**（把三种题型做成 `problemTypeRegistry` 的插件，加题型=加插件）：**暂不做**。
   原因：`ProblemTypeServiceInterface` 依赖 backend 实体（`ProblemFileEntity`/`FileEntity`）与领域接口
