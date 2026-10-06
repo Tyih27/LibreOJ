@@ -33,6 +33,7 @@ import { MigrationService } from "./migration/migration.service";
 import { ErrorFilter } from "./error.filter";
 import { RecaptchaFilter } from "./recaptcha.filter";
 import { ClusterService } from "./cluster/cluster.service";
+import { infraPlugin } from "./plugin/infra.plugin";
 import { setPluginHost } from "./plugin/plugin-host";
 
 // eslint-disable-next-line no-extend-native
@@ -43,6 +44,7 @@ String.prototype.format = function format(...args) {
 export const appGitRepoInfo = getGitRepoInfo();
 
 const HTTP_NEST_BUNDLE = "@libreoj/plugin-http-nest";
+const BACKEND_INFRA_BUNDLE = "@libreoj/backend-infra";
 const CODE_LANGUAGE_BUNDLE = "@libreoj/plugin-code-language";
 
 async function runMigration(app: NestExpressApplication, migrationConfigFile: string) {
@@ -146,6 +148,7 @@ async function bootstrap() {
         listen: false,
         nestOptions
       }),
+      [BACKEND_INFRA_BUNDLE]: infraPlugin,
       [CODE_LANGUAGE_BUNDLE]: codeLanguagePlugin
     }),
     failureMode: "fatal"
@@ -153,7 +156,7 @@ async function bootstrap() {
 
   setPluginHost(host);
 
-  await host.load([{ bundles: [HTTP_NEST_BUNDLE, CODE_LANGUAGE_BUNDLE] }]);
+  await host.load([{ bundles: [HTTP_NEST_BUNDLE, BACKEND_INFRA_BUNDLE, CODE_LANGUAGE_BUNDLE] }]);
 
   const httpServer = host.root.get<HttpNestServer>(HTTP);
   const app = httpServer.application as NestExpressApplication;
