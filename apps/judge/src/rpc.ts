@@ -209,4 +209,6 @@ export class RPC {
   }
 }
 
-export default new RPC();
+export function createRpc(): RPC {
+  return new RPC();
+}

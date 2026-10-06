@@ -1,9 +1,10 @@
 import { CHECKER_REGISTRY, type CheckerRegistry, type CustomChecker as CustomCheckerSeam } from "@libreoj/plugin-api";
 
-import { CpuAffinityStrategy, runSandbox, SANDBOX_INSIDE_PATH_BINARY } from "../../sandbox";
+import { CpuAffinityStrategy, SANDBOX_INSIDE_PATH_BINARY } from "../../sandbox";
 import { CompileResultSuccess } from "../../compile";
 import getLanguage from "../../languages";
 import { getPluginHost } from "../../plugin/plugin-host";
+import { getSandbox } from "../../plugin/services";
 import { ConfigurationError } from "../../error";
 import { MappedPath } from "../../utils";
 
@@ -82,7 +83,7 @@ export async function runCustomChecker(
     code,
     workingDirectory,
     async (stdin, stdout, stderr, parameters) =>
-      await runSandbox(taskId, {
+      await getSandbox().runSandbox(taskId, {
         ...getLanguage(checker.language).run({
           binaryDirectoryInside: SANDBOX_INSIDE_PATH_BINARY,
           workingDirectoryInside: workingDirectory.inside,

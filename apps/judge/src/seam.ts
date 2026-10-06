@@ -10,12 +10,13 @@
  * `plugin/services.ts` for the typed accessors.
  */
 
+import type { SandboxResult } from "simple-sandbox";
+
 import type { CompileResult, CompileTask } from "./compile";
 import type { Config } from "./config";
 import type { Disposer } from "./posixUtils";
 import type { RPC } from "./rpc";
-import type * as fileModule from "./file";
-import type * as sandboxModule from "./sandbox";
+import type { SandboxConfig } from "./sandbox";
 
 /** Service name for the loaded judge {@link Config}. */
 export const JUDGE_CONFIG = "judgeConfig";
@@ -51,15 +52,24 @@ export interface CompileService {
   compile(compileTask: CompileTask): Promise<CompileResult>;
 }
 
-/** Runs a compiled program inside the sandbox. */
+/**
+ * Runs a compiled program inside the sandbox.
+ *
+ * The signatures are written out rather than taken with `typeof` from `sandbox.ts` because the functions are created
+ * inside `createSandboxService` at apply time, not exported at module scope. The handle returned by `startSandbox` is
+ * the same shape the module-level function returned.
+ */
 export interface SandboxService {
-  startSandbox: typeof sandboxModule.startSandbox;
-  runSandbox: typeof sandboxModule.runSandbox;
+  startSandbox(
+    taskId: string,
+    sandboxConfig: SandboxConfig
+  ): Promise<{ waitForStop: () => Promise<SandboxResult>; stop: () => void }>;
+  runSandbox(taskId: string, sandboxConfig: SandboxConfig): Promise<SandboxResult>;
 }
 
 /** Requests and locates the files referenced by a task. */
 export interface FileService {
-  ensureFiles: typeof fileModule.ensureFiles;
-  getFile: typeof fileModule.getFile;
-  getFileHash: typeof fileModule.getFileHash;
+  ensureFiles(fileUuids: string[]): Promise<void[] | null>;
+  getFile(fileUuid: string): string;
+  getFileHash(fileUuid: string): Promise<string>;
 }

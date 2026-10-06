@@ -11,15 +11,13 @@ import { MappedPath, safelyJoinPath, ensureDirectoryEmpty } from "./utils";
 import { readFileOmitted, OmittableString, prependOmittableString } from "./omittableString";
 import {
   SandboxConfigBase,
-  runSandbox,
   SANDBOX_INSIDE_PATH_SOURCE,
   SANDBOX_INSIDE_PATH_BINARY,
   CpuAffinityStrategy
 } from "./sandbox";
 import { serverSideConfig, type Config } from "./config";
-import { getFile, getFileHash } from "./file";
 import * as fsNative from "./fsNative";
-import type { CompileService, TaskQueueService } from "./seam";
+import type { CompileService, FileService, SandboxService, TaskQueueService } from "./seam";
 
 export interface CompilationConfig extends SandboxConfigBase {
   messageFile?: string; // The file contains the message to display for user (in the binary directory)
@@ -34,7 +32,7 @@ export interface CompileTask {
   extraSourceFiles?: Record<string, string>;
 }
 
-async function hashCompileTask(compileTask: CompileTask): Promise<string> {
+async function hashCompileTask(compileTask: CompileTask, file: FileService): Promise<string> {
   return objectHash({
     language: compileTask.language,
     code: compileTask.code,
@@ -44,7 +42,7 @@ async function hashCompileTask(compileTask: CompileTask): Promise<string> {
       (await Promise.all(
         Object.entries(compileTask.extraSourceFiles).map(async ([filename, fileUuid]) => [
           filename,
-          await getFileHash(fileUuid)
+          await file.getFileHash(fileUuid)
         ])
       ))
   });
@@ -152,7 +150,12 @@ interface PendingCompileTask {
  * plugin is applied, rather than at module import time, so importing this module has no side effect; the module-level
  * singletons are gone. Compilation is scheduled through the injected task queue.
  */
-export function createCompileService(config: Config, taskQueue: TaskQueueService): CompileService {
+export function createCompileService(
+  config: Config,
+  taskQueue: TaskQueueService,
+  sandbox: SandboxService,
+  file: FileService
+): CompileService {
   // If there're multiple calls to compile() with the same compileTask, it's to prevent the task to be compiled multiple times
   // compileTaskHash -> Promise of task
   const pendingCompileTasks: Map<string, PendingCompileTask> = new Map();
@@ -161,7 +164,7 @@ export function createCompileService(config: Config, taskQueue: TaskQueueService
   async function compile(compileTask: CompileTask): Promise<CompileResult> {
     const languageConfig = getLanguage(compileTask.language);
 
-    const compileTaskHash = await hashCompileTask(compileTask);
+    const compileTaskHash = await hashCompileTask(compileTask, file);
 
     const cachedResult = compileResultCache.get(compileTaskHash);
     if (cachedResult) {
@@ -185,6 +188,8 @@ export function createCompileService(config: Config, taskQueue: TaskQueueService
               const compileResult = await doCompile(
                 config,
                 compileResultCache,
+                sandbox,
+                file,
                 compileTask,
                 compileTaskHash,
                 languageConfig,
@@ -220,6 +225,8 @@ export function createCompileService(config: Config, taskQueue: TaskQueueService
 async function doCompile(
   config: Config,
   compileResultCache: CompileResultCache,
+  sandbox: SandboxService,
+  file: FileService,
   compileTask: CompileTask,
   compileTaskHash: string,
   languageConfig: LanguageConfig<unknown>,
@@ -246,7 +253,7 @@ async function doCompile(
 
   await Promise.all(
     Object.entries(compileTask.extraSourceFiles || {}).map(([dst, src]) =>
-      fs.promises.copyFile(getFile(src), safelyJoinPath(sourceDirectory.outside, dst))
+      fs.promises.copyFile(file.getFile(src), safelyJoinPath(sourceDirectory.outside, dst))
     )
   );
 
@@ -262,7 +269,7 @@ async function doCompile(
 
   // The `taskId` parameter of `runSandbox` is just used to cancel the sandbox
   // But compilation couldn't be cancelled since multiple submissions may share the same compilation
-  const sandboxResult = await runSandbox(null, {
+  const sandboxResult = await sandbox.runSandbox(null, {
     ...compileConfig,
     tempDirectoryOutside,
     extraMounts: [

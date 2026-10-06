@@ -7,13 +7,8 @@ import { JudgeInfoTraditional, TestcaseConfig } from "./judgeInfo";
 
 import { SubmissionTask, SubmissionStatus, ProblemSample } from "..";
 import { CompileResultSuccess } from "../../../compile";
-import { getCompile } from "../../../plugin/services";
-import {
-  CpuAffinityStrategy,
-  runSandbox,
-  SANDBOX_INSIDE_PATH_BINARY,
-  SANDBOX_INSIDE_PATH_WORKING
-} from "../../../sandbox";
+import { getCompile, getFile, getSandbox } from "../../../plugin/services";
+import { CpuAffinityStrategy, SANDBOX_INSIDE_PATH_BINARY, SANDBOX_INSIDE_PATH_WORKING } from "../../../sandbox";
 import getLanguage from "../../../languages";
 import { serverSideConfig } from "../../../config";
 import { safelyJoinPath, MappedPath } from "../../../utils";
@@ -24,7 +19,6 @@ import {
   readFileOmitted,
   stringToOmited
 } from "../../../omittableString";
-import { getFile } from "../../../file";
 import { ConfigurationError } from "../../../error";
 import { runBuiltinChecker } from "../../../checkers/builtin";
 import { runCustomChecker, validateCustomChecker } from "../../../checkers/custom";
@@ -134,7 +128,7 @@ async function runTestcase(
 
   const writeInputFile = () => {
     if (isSample) return fs.promises.writeFile(inputFile.outside, sample.inputData);
-    else return fsNative.copy(getFile(task.extraInfo.testData[testcase.inputFile]), inputFile.outside);
+    else return fsNative.copy(getFile().getFile(task.extraInfo.testData[testcase.inputFile]), inputFile.outside);
   };
   await writeInputFile();
 
@@ -142,7 +136,7 @@ async function runTestcase(
   const stderrFile = safelyJoinPath(workingDirectory, uuid());
 
   const languageConfig = getLanguage(task.extraInfo.submissionContent.language);
-  const sandboxResult = await runSandbox(task.taskId, {
+  const sandboxResult = await getSandbox().runSandbox(task.taskId, {
     ...languageConfig.run({
       binaryDirectoryInside: binaryDirectory.inside,
       workingDirectoryInside: workingDirectory.inside,
@@ -191,10 +185,16 @@ async function runTestcase(
 
   result.input = isSample
     ? stringToOmited(sample.inputData, serverSideConfig.limit.dataDisplay)
-    : await readFileOmitted(getFile(task.extraInfo.testData[testcase.inputFile]), serverSideConfig.limit.dataDisplay);
+    : await readFileOmitted(
+        getFile().getFile(task.extraInfo.testData[testcase.inputFile]),
+        serverSideConfig.limit.dataDisplay
+      );
   result.output = isSample
     ? stringToOmited(sample.outputData, serverSideConfig.limit.dataDisplay)
-    : await readFileOmitted(getFile(task.extraInfo.testData[testcase.outputFile]), serverSideConfig.limit.dataDisplay);
+    : await readFileOmitted(
+        getFile().getFile(task.extraInfo.testData[testcase.outputFile]),
+        serverSideConfig.limit.dataDisplay
+      );
   result.userOutput = await readFileOmitted(outputFile.outside, serverSideConfig.limit.dataDisplay);
   result.userError = await readFileOmitted(stderrFile.outside, serverSideConfig.limit.stderrDisplay);
   result.time = sandboxResult.time / 1e6;
@@ -208,7 +208,7 @@ async function runTestcase(
     const answerFile = safelyJoinPath(workingDirectory, uuid());
 
     if (isSample) await fs.promises.writeFile(answerFile.outside, sample.outputData);
-    else await fsNative.copy(getFile(task.extraInfo.testData[testcase.outputFile]), answerFile.outside);
+    else await fsNative.copy(getFile().getFile(task.extraInfo.testData[testcase.outputFile]), answerFile.outside);
 
     const checkerResult =
       judgeInfo.checker.type === "custom"
@@ -270,7 +270,7 @@ export async function runTask(
 
     const compileResult = await getCompile().compile({
       language: judgeInfo.checker.language,
-      code: await fs.promises.readFile(getFile(task.extraInfo.testData[judgeInfo.checker.filename]), "utf-8"),
+      code: await fs.promises.readFile(getFile().getFile(task.extraInfo.testData[judgeInfo.checker.filename]), "utf-8"),
       compileAndRunOptions: judgeInfo.checker.compileAndRunOptions
     });
 

@@ -3,7 +3,7 @@ import objectHash from "object-hash";
 import { SubmissionTask, ProblemSample } from "..";
 import { Checker, getCheckerMeta } from "../../../checkers";
 import { hashData } from "../../../utils";
-import { getFileHash } from "../../../file";
+import { getFile } from "../../../plugin/services";
 
 import { ExtraParametersTraditional, SubmissionContentTraditional, TestcaseResultTraditional } from ".";
 import { validateJudgeInfoSubtasks, validateJudgeInfoExtraSourceFiles } from "../common";
@@ -127,8 +127,8 @@ export async function hashTestcase(
   const testcase = judgeInfo.subtasks[subtaskIndex].testcases[testcaseIndex];
 
   const [inputDataHash, outputDataHash] = await Promise.all([
-    getFileHash(testData[testcase.inputFile]),
-    getFileHash(testData[testcase.outputFile])
+    getFile().getFileHash(testData[testcase.inputFile]),
+    getFile().getFileHash(testData[testcase.outputFile])
   ]);
 
   return objectHash({

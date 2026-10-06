@@ -7,13 +7,8 @@ import { JudgeInfoInteraction, TestcaseConfig } from "./judgeInfo";
 
 import { SubmissionTask, SubmissionStatus, ProblemSample } from "..";
 import { CompileResultSuccess } from "../../../compile";
-import { getCompile } from "../../../plugin/services";
-import {
-  startSandbox,
-  SANDBOX_INSIDE_PATH_BINARY,
-  SANDBOX_INSIDE_PATH_WORKING,
-  CpuAffinityStrategy
-} from "../../../sandbox";
+import { getCompile, getFile, getSandbox } from "../../../plugin/services";
+import { SANDBOX_INSIDE_PATH_BINARY, SANDBOX_INSIDE_PATH_WORKING, CpuAffinityStrategy } from "../../../sandbox";
 import getLanguage from "../../../languages";
 import { serverSideConfig } from "../../../config";
 import { safelyJoinPath, MappedPath, merge } from "../../../utils";
@@ -24,7 +19,6 @@ import {
   prependOmittableString,
   isOmittableString
 } from "../../../omittableString";
-import { getFile } from "../../../file";
 import { ConfigurationError } from "../../../error";
 import { createPipe, createSharedMemory, Disposer } from "../../../posixUtils";
 import { parseTestlibMessage } from "../../../checkers";
@@ -132,7 +126,7 @@ async function runTestcase(
 
   const inputFile = safelyJoinPath(workingDirectory, uuid());
   if (isSample) await fs.promises.writeFile(inputFile.outside, sample.inputData);
-  else await fsNative.copy(getFile(task.extraInfo.testData[testcase.inputFile]), inputFile.outside);
+  else await fsNative.copy(getFile().getFile(task.extraInfo.testData[testcase.inputFile]), inputFile.outside);
 
   const userStderrFile = safelyJoinPath(workingDirectory, uuid());
   const userLanguageConfig = getLanguage(task.extraInfo.submissionContent.language);
@@ -163,7 +157,7 @@ async function runTestcase(
     parameters: [],
     compileResultExtraInfo: compileResult.extraInfo
   });
-  const userSandbox = await startSandbox(task.taskId, {
+  const userSandbox = await getSandbox().startSandbox(task.taskId, {
     ...userRunConfig,
     time: timeLimit,
     memory: memoryLimit * 1024 * 1024,
@@ -199,7 +193,7 @@ async function runTestcase(
     parameters: [inputFile.inside, "/dev/null"],
     compileResultExtraInfo: interactorCompileResult.extraInfo
   });
-  const interactorSandbox = await startSandbox(task.taskId, {
+  const interactorSandbox = await getSandbox().startSandbox(task.taskId, {
     ...interactorRunConfig,
     time: interactorTimeLimit,
     memory: interactorMemoryLimit * 1024 * 1024,
@@ -248,7 +242,10 @@ async function runTestcase(
 
   result.input = isSample
     ? stringToOmited(sample.inputData, serverSideConfig.limit.dataDisplay)
-    : await readFileOmitted(getFile(task.extraInfo.testData[testcase.inputFile]), serverSideConfig.limit.dataDisplay);
+    : await readFileOmitted(
+        getFile().getFile(task.extraInfo.testData[testcase.inputFile]),
+        serverSideConfig.limit.dataDisplay
+      );
   result.userError = await readFileOmitted(userStderrFile.outside, serverSideConfig.limit.stderrDisplay);
   result.time = userSandboxResult.time / 1e6;
   result.memory = userSandboxResult.memory / 1024;
@@ -294,7 +291,10 @@ export async function runTask(
 
   const interactorCompileResult = await getCompile().compile({
     language: judgeInfo.interactor.language,
-    code: await fs.promises.readFile(getFile(task.extraInfo.testData[judgeInfo.interactor.filename]), "utf-8"),
+    code: await fs.promises.readFile(
+      getFile().getFile(task.extraInfo.testData[judgeInfo.interactor.filename]),
+      "utf-8"
+    ),
     compileAndRunOptions: judgeInfo.interactor.compileAndRunOptions
   });
 

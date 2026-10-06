@@ -1,8 +1,9 @@
 import * as Sandbox from "simple-sandbox";
 
-import config from "./config";
+import type { Config } from "./config";
 import { MappedPath, safelyJoinPath, OverridableRecord, merge } from "./utils";
-import rpc from "./rpc";
+import type { RPC } from "./rpc";
+import type { SandboxService } from "./seam";
 import { CanceledError } from "./error";
 import { FileDescriptor } from "./posixUtils";
 import * as fsNative from "./fsNative";
@@ -111,131 +112,141 @@ export const SANDBOX_INSIDE_PATH_BINARY = "/sandbox/binary";
 export const SANDBOX_INSIDE_PATH_WORKING = "/sandbox/working";
 export const SANDBOX_INSIDE_PATH_SOURCE = "/sandbox/source";
 
-const sandboxUser = Sandbox.getUidAndGidInSandbox(config.sandbox.rootfs, config.sandbox.user);
-async function setSandboxUserPermission(path: string, writeAccess: boolean): Promise<void> {
-  await fsNative.chmodown(path, {
-    mode: 0o755,
-    owner: writeAccess ? sandboxUser.uid : 0,
-    group: writeAccess ? sandboxUser.gid : 0
-  });
-}
-
-function resolveSandboxCpuAffinity(strategy: CpuAffinityStrategy): number[] {
-  const map = {
-    [CpuAffinityStrategy.Compiler]: config.cpuAffinity?.compiler,
-    [CpuAffinityStrategy.UserProgram]: config.cpuAffinity?.userProgram,
-    [CpuAffinityStrategy.Interactor]: config.cpuAffinity?.interactor,
-    [CpuAffinityStrategy.Checker]: config.cpuAffinity?.checker
-  };
-
-  if (!(strategy in map)) {
-    throw new Error(`Unknown CPU affinity strategy: ${strategy}`);
-  }
-
-  return map[strategy];
-}
-
 /**
- * @param taskId If not null, it is used to determine if and be notified when the current is canceled.
+ * Builds the sandbox runner. The sandbox user is resolved (read from the rootfs passwd) and the helper functions are
+ * created when the plugin is applied, rather than at module import time, so importing this module has no side effect.
+ * The injected `config` and `rpc` are captured by the returned functions, as is the resolved `sandboxUser`.
  */
-export async function startSandbox(taskId: string, sandboxConfig: SandboxConfig) {
-  if (taskId) rpc.ensureNotCanceled(taskId);
+export function createSandboxService(config: Config, rpc: RPC): SandboxService {
+  const sandboxUser = Sandbox.getUidAndGidInSandbox(config.sandbox.rootfs, config.sandbox.user);
 
-  let executable: string;
-  let parametersPrepend: string[];
-  if (sandboxConfig.executable) {
-    executable = sandboxConfig.executable;
-    parametersPrepend = [executable];
-  } else {
-    executable = "/bin/bash";
-    parametersPrepend = [executable, "-c", sandboxConfig.script, "script.sh"];
+  async function setSandboxUserPermission(path: string, writeAccess: boolean): Promise<void> {
+    await fsNative.chmodown(path, {
+      mode: 0o755,
+      owner: writeAccess ? sandboxUser.uid : 0,
+      group: writeAccess ? sandboxUser.gid : 0
+    });
   }
 
-  const mounts = sandboxConfig.extraMounts.concat([
-    {
-      mappedPath: {
-        outside: sandboxConfig.tempDirectoryOutside,
-        inside: "/tmp"
-      },
-      readOnly: false
+  function resolveSandboxCpuAffinity(strategy: CpuAffinityStrategy): number[] {
+    const map = {
+      [CpuAffinityStrategy.Compiler]: config.cpuAffinity?.compiler,
+      [CpuAffinityStrategy.UserProgram]: config.cpuAffinity?.userProgram,
+      [CpuAffinityStrategy.Interactor]: config.cpuAffinity?.interactor,
+      [CpuAffinityStrategy.Checker]: config.cpuAffinity?.checker
+    };
+
+    if (!(strategy in map)) {
+      throw new Error(`Unknown CPU affinity strategy: ${strategy}`);
     }
-  ]);
 
-  await Promise.all([
-    // Create the mount points in the sandbox rootfs
-    await Promise.all(
-      mounts.map(mount => fsNative.ensureDir(safelyJoinPath(config.sandbox.rootfs, mount.mappedPath.inside)))
-    ),
-    // TODO: Use something like bindfs to set owner for the mount point instead
-    await Promise.all(mounts.map(mount => setSandboxUserPermission(mount.mappedPath.outside, !mount.readOnly)))
-  ]);
+    return map[strategy];
+  }
 
-  if (taskId) rpc.ensureNotCanceled(taskId);
+  /**
+   * @param taskId If not null, it is used to determine if and be notified when the current is canceled.
+   */
+  async function startSandbox(taskId: string, sandboxConfig: SandboxConfig) {
+    if (taskId) rpc.ensureNotCanceled(taskId);
 
-  const preservedFileDescriptors = sandboxConfig.preservedFileDescriptors || [];
-  preservedFileDescriptors.forEach(fd => fd && fd.setCloseOnExec(false));
+    let executable: string;
+    let parametersPrepend: string[];
+    if (sandboxConfig.executable) {
+      executable = sandboxConfig.executable;
+      parametersPrepend = [executable];
+    } else {
+      executable = "/bin/bash";
+      parametersPrepend = [executable, "-c", sandboxConfig.script, "script.sh"];
+    }
 
-  const environments = merge(config.sandbox.environments, sandboxConfig.environments);
+    const mounts = sandboxConfig.extraMounts.concat([
+      {
+        mappedPath: {
+          outside: sandboxConfig.tempDirectoryOutside,
+          inside: "/tmp"
+        },
+        readOnly: false
+      }
+    ]);
 
-  const sandboxParameter: Sandbox.SandboxParameter = {
-    time: sandboxConfig.time,
-    memory: sandboxConfig.memory,
-    process: sandboxConfig.process,
-    chroot: config.sandbox.rootfs,
-    hostname: config.sandbox.hostname,
-    mounts: mounts.map(mount => ({
-      src: mount.mappedPath.outside,
-      dst: mount.mappedPath.inside,
-      limit: mount.readOnly ? 0 : -1
-    })),
-    redirectBeforeChroot: false,
-    mountProc: true,
-    executable,
-    stdin: typeof sandboxConfig.stdin === "object" ? (sandboxConfig.stdin || {}).fd : sandboxConfig.stdin,
-    stdout: typeof sandboxConfig.stdout === "object" ? (sandboxConfig.stdout || {}).fd : sandboxConfig.stdout,
-    stderr: typeof sandboxConfig.stderr === "object" ? (sandboxConfig.stderr || {}).fd : sandboxConfig.stderr,
-    user: sandboxUser,
-    cgroup: "",
-    parameters: [...parametersPrepend, ...(sandboxConfig.parameters || []).filter(x => x != null)],
-    environments: Object.entries(environments).map(([key, value]) => `${key}=${value}`),
-    workingDirectory: sandboxConfig.workingDirectory,
-    stackSize: sandboxConfig.stackSize || sandboxConfig.memory,
-    cpuAffinity: resolveSandboxCpuAffinity(sandboxConfig.cpuAffinity)
-  };
+    await Promise.all([
+      // Create the mount points in the sandbox rootfs
+      await Promise.all(
+        mounts.map(mount => fsNative.ensureDir(safelyJoinPath(config.sandbox.rootfs, mount.mappedPath.inside)))
+      ),
+      // TODO: Use something like bindfs to set owner for the mount point instead
+      await Promise.all(mounts.map(mount => setSandboxUserPermission(mount.mappedPath.outside, !mount.readOnly)))
+    ]);
 
-  const sandbox = Sandbox.startSandbox(sandboxParameter);
+    if (taskId) rpc.ensureNotCanceled(taskId);
 
-  preservedFileDescriptors.forEach(fd => fd && fd.setCloseOnExec(true));
+    const preservedFileDescriptors = sandboxConfig.preservedFileDescriptors || [];
+    preservedFileDescriptors.forEach(fd => fd && fd.setCloseOnExec(false));
 
-  const resultPromise = taskId
-    ? // eslint-disable-next-line no-async-promise-executor
-      new Promise<Sandbox.SandboxResult>(async (resolve, reject) => {
-        const off = rpc.onCancel(taskId, () => {
-          sandbox.stop();
-        });
+    const environments = merge(config.sandbox.environments, sandboxConfig.environments);
 
-        try {
-          const result = await sandbox.waitForStop();
-          off();
-          if (rpc.isCanceled(taskId)) reject(new CanceledError());
-          else resolve(result);
-        } catch (e) {
-          off();
-          reject(e);
-        }
-      })
-    : sandbox.waitForStop();
+    const sandboxParameter: Sandbox.SandboxParameter = {
+      time: sandboxConfig.time,
+      memory: sandboxConfig.memory,
+      process: sandboxConfig.process,
+      chroot: config.sandbox.rootfs,
+      hostname: config.sandbox.hostname,
+      mounts: mounts.map(mount => ({
+        src: mount.mappedPath.outside,
+        dst: mount.mappedPath.inside,
+        limit: mount.readOnly ? 0 : -1
+      })),
+      redirectBeforeChroot: false,
+      mountProc: true,
+      executable,
+      stdin: typeof sandboxConfig.stdin === "object" ? (sandboxConfig.stdin || {}).fd : sandboxConfig.stdin,
+      stdout: typeof sandboxConfig.stdout === "object" ? (sandboxConfig.stdout || {}).fd : sandboxConfig.stdout,
+      stderr: typeof sandboxConfig.stderr === "object" ? (sandboxConfig.stderr || {}).fd : sandboxConfig.stderr,
+      user: sandboxUser,
+      cgroup: "",
+      parameters: [...parametersPrepend, ...(sandboxConfig.parameters || []).filter(x => x != null)],
+      environments: Object.entries(environments).map(([key, value]) => `${key}=${value}`),
+      workingDirectory: sandboxConfig.workingDirectory,
+      stackSize: sandboxConfig.stackSize || sandboxConfig.memory,
+      cpuAffinity: resolveSandboxCpuAffinity(sandboxConfig.cpuAffinity)
+    };
 
-  return {
-    waitForStop: () => resultPromise,
-    stop: () => sandbox.stop()
-  };
-}
+    const sandbox = Sandbox.startSandbox(sandboxParameter);
 
-/**
- * @param taskId If not null, it is used to determine if and be notified when the current is canceled.
- */
-export async function runSandbox(taskId: string, sandboxConfig: SandboxConfig) {
-  const sandbox = await startSandbox(taskId, sandboxConfig);
-  return await sandbox.waitForStop();
+    preservedFileDescriptors.forEach(fd => fd && fd.setCloseOnExec(true));
+
+    const resultPromise = taskId
+      ? // eslint-disable-next-line no-async-promise-executor
+        new Promise<Sandbox.SandboxResult>(async (resolve, reject) => {
+          const off = rpc.onCancel(taskId, () => {
+            sandbox.stop();
+          });
+
+          try {
+            const result = await sandbox.waitForStop();
+            off();
+            if (rpc.isCanceled(taskId)) reject(new CanceledError());
+            else resolve(result);
+          } catch (e) {
+            off();
+            reject(e);
+          }
+        })
+      : sandbox.waitForStop();
+
+    return {
+      waitForStop: () => resultPromise,
+      stop: () => sandbox.stop()
+    };
+  }
+
+  /**
+   * @param taskId If not null, it is used to determine if and be notified when the current is canceled.
+   */
+  async function runSandbox(taskId: string, sandboxConfig: SandboxConfig) {
+    const sandbox = await startSandbox(taskId, sandboxConfig);
+    return await sandbox.waitForStop();
+  }
+
+  return { startSandbox, runSandbox };
 }

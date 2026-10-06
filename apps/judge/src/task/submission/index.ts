@@ -10,7 +10,7 @@ import * as Interaction from "./interaction";
 import * as SubmitAnswer from "./submit-answer";
 
 import { Task } from "..";
-import { ensureFiles } from "../../file";
+import { getFile } from "../../plugin/services";
 import { ConfigurationError, CanceledError } from "../../error";
 import { OmittableString } from "../../omittableString";
 
@@ -168,7 +168,7 @@ export default async function onSubmission<JudgeInfo, SubmissionContent, Testcas
 
     // Download testdata files
     const requiredFiles = Object.values(task.extraInfo.testData);
-    await ensureFiles(requiredFiles);
+    await getFile().ensureFiles(requiredFiles);
 
     // Downlaod submission file
     if (task.extraInfo.file) {

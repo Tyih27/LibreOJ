@@ -1,7 +1,7 @@
 import objectHash from "object-hash";
 
 import { SubmissionTask, ProblemSample } from "..";
-import { getFileHash } from "../../../file";
+import { getFile } from "../../../plugin/services";
 import { hashData } from "../../../utils";
 
 import { ExtraParametersInteraction, SubmissionContentInteraction, TestcaseResultInteraction } from ".";
@@ -133,7 +133,7 @@ export async function hashTestcase(
 
   return objectHash({
     interactor: getInteractorMeta(judgeInfo),
-    inputDataHash: await getFileHash(testData[testcase.inputFile]),
+    inputDataHash: await getFile().getFileHash(testData[testcase.inputFile]),
     timeLimit: testcase.timeLimit || judgeInfo.subtasks[subtaskIndex].timeLimit || judgeInfo.timeLimit,
     memoryLimit: testcase.memoryLimit || judgeInfo.subtasks[subtaskIndex].memoryLimit || judgeInfo.memoryLimit,
     compileTaskHash: compileResult.compileTaskHash,

@@ -6,12 +6,11 @@ import { JudgeInfoSubmitAnswer, TestcaseConfig } from "./judgeInfo";
 
 import { SubmissionTask, ProblemSample } from "..";
 import { CompileResultSuccess } from "../../../compile";
-import { getCompile } from "../../../plugin/services";
+import { getCompile, getFile } from "../../../plugin/services";
 import { SANDBOX_INSIDE_PATH_WORKING } from "../../../sandbox";
 import { serverSideConfig } from "../../../config";
 import { safelyJoinPath } from "../../../utils";
 import { isOmittableString, OmittableString, readFileOmitted, prependOmittableString } from "../../../omittableString";
-import { getFile } from "../../../file";
 import { ConfigurationError } from "../../../error";
 import { runBuiltinChecker } from "../../../checkers/builtin";
 import { runCustomChecker, validateCustomChecker } from "../../../checkers/custom";
@@ -92,9 +91,12 @@ async function runTestcase(
 
   result.input =
     testcase.inputFile &&
-    (await readFileOmitted(getFile(task.extraInfo.testData[testcase.inputFile]), serverSideConfig.limit.dataDisplay));
+    (await readFileOmitted(
+      getFile().getFile(task.extraInfo.testData[testcase.inputFile]),
+      serverSideConfig.limit.dataDisplay
+    ));
   result.output = await readFileOmitted(
-    getFile(task.extraInfo.testData[testcase.outputFile]),
+    getFile().getFile(task.extraInfo.testData[testcase.outputFile]),
     serverSideConfig.limit.dataDisplay
   );
 
@@ -115,11 +117,11 @@ async function runTestcase(
 
     const inputFile = safelyJoinPath(workingDirectory, uuid());
     if (testcase.inputFile)
-      await fsNative.copy(getFile(task.extraInfo.testData[testcase.inputFile]), inputFile.outside);
+      await fsNative.copy(getFile().getFile(task.extraInfo.testData[testcase.inputFile]), inputFile.outside);
     else await fs.promises.writeFile(inputFile.outside, "");
 
     const answerFile = safelyJoinPath(workingDirectory, uuid());
-    await fsNative.copy(getFile(task.extraInfo.testData[testcase.outputFile]), answerFile.outside);
+    await fsNative.copy(getFile().getFile(task.extraInfo.testData[testcase.outputFile]), answerFile.outside);
 
     const outputFile = safelyJoinPath(workingDirectory, uuid());
     await fsNative.copy(fileUnzipResult.path, outputFile.outside);
@@ -201,7 +203,10 @@ export async function runTask(
 
         const compileResult = await getCompile().compile({
           language: judgeInfo.checker.language,
-          code: await fs.promises.readFile(getFile(task.extraInfo.testData[judgeInfo.checker.filename]), "utf-8"),
+          code: await fs.promises.readFile(
+            getFile().getFile(task.extraInfo.testData[judgeInfo.checker.filename]),
+            "utf-8"
+          ),
           compileAndRunOptions: judgeInfo.checker.compileAndRunOptions
         });
 
