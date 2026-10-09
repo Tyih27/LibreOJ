@@ -149,6 +149,81 @@ test("specialJudge honours an explicit interface when choosing the C++ standard"
   assert.equal(checker.compileAndRunOptions.std, "c++03");
 });
 
+test("specialJudge without an explicit interface detects testlib from the source including testlib.h", () => {
+  const config = {
+    subtasks: [{ score: 100, type: "sum", cases: [1] }],
+    inputFile: "t#.in",
+    outputFile: "t#.out",
+    specialJudge: { language: "cpp", fileName: "spj.cpp" }
+  };
+  const testData = [
+    file("subtasks.json", JSON.stringify(config)),
+    file("t1.in"),
+    file("t1.out"),
+    file("spj.cpp", '#include "testlib.h"')
+  ];
+
+  const checker = uojConfigImporter.import(testData, TRADITIONAL).checker as unknown as {
+    interface: string;
+    compileAndRunOptions: { std: string };
+  };
+  assert.equal(checker.interface, "testlib");
+  assert.equal(checker.compileAndRunOptions.std, "c++11");
+});
+
+test("specialJudge without an explicit interface falls back to legacy when the source omits testlib.h", () => {
+  const config = {
+    subtasks: [{ score: 100, type: "sum", cases: [1] }],
+    inputFile: "t#.in",
+    outputFile: "t#.out",
+    specialJudge: { language: "cpp", fileName: "spj.cpp" }
+  };
+  const testData = [
+    file("subtasks.json", JSON.stringify(config)),
+    file("t1.in"),
+    file("t1.out"),
+    file("spj.cpp", "#include <cstdio>\nint main() {}")
+  ];
+
+  const checker = uojConfigImporter.import(testData, TRADITIONAL).checker as unknown as {
+    interface: string;
+    compileAndRunOptions: { std: string };
+  };
+  assert.equal(checker.interface, "legacy");
+  assert.equal(checker.compileAndRunOptions.std, "c++03");
+});
+
+test("specialJudge without an explicit interface keeps testlib when the source is not loaded", () => {
+  const config = {
+    subtasks: [{ score: 100, type: "sum", cases: [1] }],
+    inputFile: "t#.in",
+    outputFile: "t#.out",
+    specialJudge: { language: "cpp", fileName: "spj.cpp" }
+  };
+  const testData = [file("subtasks.json", JSON.stringify(config)), file("t1.in"), file("t1.out"), file("spj.cpp")];
+
+  const checker = uojConfigImporter.import(testData, TRADITIONAL).checker as unknown as { interface: string };
+  assert.equal(checker.interface, "testlib");
+});
+
+test("contentFilenames requests the special judge source only when the interface is implicit", () => {
+  const implicit = {
+    subtasks: [{ score: 100, type: "sum", cases: [1] }],
+    specialJudge: { language: "cpp", fileName: "spj.cpp" }
+  };
+  const implicitData = [file("subtasks.json", JSON.stringify(implicit)), file("spj.cpp", '#include "testlib.h"')];
+  assert.deepEqual(uojConfigImporter.contentFilenames?.(implicitData), ["spj.cpp"]);
+
+  const explicit = {
+    subtasks: [{ score: 100, type: "sum", cases: [1] }],
+    specialJudge: { language: "cpp", fileName: "spj.cpp", interface: "legacy" }
+  };
+  const explicitData = [file("subtasks.json", JSON.stringify(explicit)), file("spj.cpp", "int main() {}")];
+  assert.deepEqual(uojConfigImporter.contentFilenames?.(explicitData), []);
+
+  assert.deepEqual(uojConfigImporter.contentFilenames?.([file("1.in"), file("1.out")]), []);
+});
+
 test("interaction produces an interactor and no checker, output file not required", () => {
   const config = {
     subtasks: [{ score: 100, type: "sum", cases: [1] }],

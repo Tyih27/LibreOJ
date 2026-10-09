@@ -160,13 +160,30 @@ function buildSubtasks(config: UojConfig, filename: string): ProblemDataSubtask[
   });
 }
 
-function buildChecker(config: UojConfig, filename: string) {
+/**
+ * Detects the special judge interface from its source when the config omits an explicit `interface`.
+ *
+ * Mirrors the legacy migration (`migration/migrations/problem.ts`): a C++ source that includes `testlib.h` uses the
+ * `testlib` interface, anything else (or a non-C++ language) uses `legacy`. If the source content has not been loaded
+ * -- e.g. the file is unreadable -- it keeps the historical default of `testlib`.
+ */
+function detectCheckerInterface(
+  specialJudge: { language: string; fileName: string },
+  testData: ProblemFileEntity[]
+): string {
+  const content = testData.find(file => file.filename === specialJudge.fileName)?.content;
+  if (typeof content !== "string") return "testlib";
+  const useTestlib = specialJudge.language.startsWith("cpp") && content.includes("testlib.h");
+  return useTestlib ? "testlib" : "legacy";
+}
+
+function buildChecker(config: UojConfig, filename: string, testData: ProblemFileEntity[]) {
   const { specialJudge } = config;
   if (!specialJudge) return undefined;
   if (typeof specialJudge.fileName !== "string" || !specialJudge.fileName)
     throw new Error(`"specialJudge.fileName" must be a non-empty string in "${filename}"`);
 
-  const iface = specialJudge.interface ?? "testlib";
+  const iface = specialJudge.interface ?? detectCheckerInterface(specialJudge, testData);
   return {
     type: "custom" as const,
     interface: iface,
@@ -268,7 +285,7 @@ function importConfig(testData: ProblemFileEntity[], context: ImportContext): Pr
   const result: ProblemDataImportResult = { subtasks };
 
   if (problemType === "traditional" || problemType === "submit-answer") {
-    const checker = buildChecker(config, file.filename);
+    const checker = buildChecker(config, file.filename, testData);
     if (checker) result.checker = checker;
   }
   if (problemType === "interaction") result.interactor = buildInteractor(config, file.filename);
@@ -291,5 +308,20 @@ export const uojConfigImporter: ProblemDataImporter = {
   },
   import(testData: ProblemFileEntity[], context: ImportContext): ProblemDataImportResult {
     return importConfig(testData, context);
+  },
+  contentFilenames(testData: ProblemFileEntity[]): string[] {
+    const configFile = findConfigFile(testData);
+    if (!configFile || typeof configFile.content !== "string") return [];
+    let config: UojConfig;
+    try {
+      config = parseConfigFile(configFile);
+    } catch {
+      // A broken config is reported by `import()`; there is nothing extra to load here.
+      return [];
+    }
+    const { specialJudge } = config;
+    if (!specialJudge || specialJudge.interface != null) return [];
+    const { fileName } = specialJudge;
+    return typeof fileName === "string" && testData.some(file => file.filename === fileName) ? [fileName] : [];
   }
 };

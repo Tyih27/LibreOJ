@@ -84,6 +84,13 @@ export interface ProblemDataImporter {
   detect(testData: ProblemFileEntity[], context: ImportContext): boolean;
   /** Parses the testdata into a result. Only called when {@link detect} returned true. */
   import(testData: ProblemFileEntity[], context: ImportContext): ProblemDataImportResult;
+  /**
+   * The testdata filenames whose content this importer needs in addition to the configuration files (which the driver
+   * always loads first). It lets an importer inspect a source that only lives in object storage -- e.g. a special judge
+   * whose interface is detected from its source. A requested file that cannot be read is not fatal; {@link import} runs
+   * without it.
+   */
+  contentFilenames?(testData: ProblemFileEntity[]): string[];
 }
 
 /** The registry of available importers. */

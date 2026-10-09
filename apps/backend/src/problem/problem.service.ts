@@ -34,6 +34,7 @@ import { GroupService } from "../group/group.service";
 import { FileService } from "../file/file.service";
 import { logger } from "../logger";
 import { PROBLEM_DATA_CONFIG_FILENAMES } from "../problem-data-import/uoj-config";
+import { getProblemDataImporters } from "../plugin/services";
 import { ConfigService } from "../config/config.service";
 import { RedisService } from "../redis/redis.service";
 import { LockService } from "../redis/lock.service";
@@ -558,7 +559,7 @@ export class ProblemService {
 
     const [judgeInfo, submittable] = await this.getProblemJudgeInfo(problem);
     const testData = await this.getProblemFiles(problem, ProblemFileType.TestData);
-    await this.loadProblemDataConfigContents(testData);
+    await this.loadProblemDataContents(testData);
     const preprocessed = this.problemTypeFactoryService.type(problem.type).preprocessJudgeInfo(judgeInfo, testData);
     await this.redisService.cacheSet(key, JSON.stringify([preprocessed, submittable]));
 
@@ -566,21 +567,35 @@ export class ProblemService {
   }
 
   /**
-   * Loads the content of any testdata configuration file (`subtasks.json` / `data.yml`) into its entity.
+   * Loads the testdata content the problem data importers need into their entities.
    *
-   * The file list carries metadata only; the content lives in object storage. The problem data importers inspect it to
-   * derive subtasks/checker/interactor, so it is fetched here -- on the cached preprocessing path -- before the
-   * synchronous `preprocessJudgeInfo` runs. A read failure is not fatal: the importer falls back to auto-matching.
+   * The file list carries metadata only; the content lives in object storage. Configuration files (`subtasks.json` /
+   * `data.yml`) are always read first, because an importer's `contentFilenames` is derived
+   * from the parsed config (e.g. the special judge source whose `interface` is detected from its content). What the
+   * importers request on top of that is then loaded too. This runs on the cached preprocessing path, before the
+   * synchronous `preprocessJudgeInfo`. A read failure is not fatal: the importer falls back to auto-matching.
    */
-  private async loadProblemDataConfigContents(testData: ProblemFileEntity[]): Promise<void> {
+  private async loadProblemDataContents(testData: ProblemFileEntity[]): Promise<void> {
+    await this.loadFileContents(testData, file => PROBLEM_DATA_CONFIG_FILENAMES.includes(file.filename.toLowerCase()));
+
+    const requested = new Set<string>();
+    for (const importer of getProblemDataImporters().importers)
+      for (const filename of importer.contentFilenames?.(testData) ?? []) requested.add(filename);
+    if (requested.size > 0) await this.loadFileContents(testData, file => requested.has(file.filename));
+  }
+
+  private async loadFileContents(
+    testData: ProblemFileEntity[],
+    predicate: (file: ProblemFileEntity) => boolean
+  ): Promise<void> {
     await Promise.all(
       testData
-        .filter(file => PROBLEM_DATA_CONFIG_FILENAMES.includes(file.filename.toLowerCase()))
+        .filter(file => predicate(file) && file.content === undefined)
         .map(async file => {
           try {
             file.content = await this.fileService.getFileContent(file.uuid);
           } catch (e) {
-            logger.warn(`Failed to read problem data config ${file.filename}: ${e}`);
+            logger.warn(`Failed to read problem data file ${file.filename}: ${e}`);
           }
         })
     );
