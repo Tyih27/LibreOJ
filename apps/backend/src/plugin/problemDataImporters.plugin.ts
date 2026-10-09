@@ -5,6 +5,7 @@ import type { PluginDefinition } from "@libreoj/plugin-core";
 import { PROBLEM_DATA_IMPORTERS } from "./seam";
 
 import { nativeImporter } from "../problem-data-import/native";
+import { polygonImporter } from "../problem-data-import/polygon";
 import { createProblemDataImporterRegistry } from "../problem-data-import/registry";
 import { uojConfigImporter } from "../problem-data-import/uoj-config";
 
@@ -19,7 +20,10 @@ export const problemDataImportersPlugin: PluginDefinition = {
   name: "@libreoj/backend-problem-data-import",
   provide: [PROBLEM_DATA_IMPORTERS],
   apply(ctx) {
-    ctx.set(PROBLEM_DATA_IMPORTERS, createProblemDataImporterRegistry([uojConfigImporter, nativeImporter]));
-    Logger.log("problem data importers registered: uoj-data-config, libreoj-native", "Bootstrap");
+    ctx.set(
+      PROBLEM_DATA_IMPORTERS,
+      createProblemDataImporterRegistry([uojConfigImporter, polygonImporter, nativeImporter])
+    );
+    Logger.log("problem data importers registered: uoj-data-config, codeforces-polygon, libreoj-native", "Bootstrap");
   }
 };

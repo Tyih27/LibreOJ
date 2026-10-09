@@ -326,6 +326,18 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - 坏配置**直接报错**（不回退），并在 importer 内校验被引用文件存在。judge 侧**无需改动**（产出的 judgeInfo 字段与现有契约一致）。
 - 测试：`apps/backend/test/problem-data-import.test.ts`（`node:test` + `tsx`）。
 
+#### A（已实现）：spj 接口按源文件内容自动识别
+- 当配置未显式给出 `specialJudge.interface` 时，importer 读 spj **源文件**判定：C++ 且含 `testlib.h` → `testlib`，否则 `legacy`
+  （与 `migration/migrations/problem.ts` 一致）；显式 `interface` 原样使用；源未加载 → 回退旧默认 `testlib`。
+- `ProblemDataImporter` 新增**可选** `contentFilenames?(testData)`，让驱动按需加载源文件；`ProblemService.loadProblemDataContents`
+  先读配置文件，再读各 importer 请求的文件。
+- **不变量**：UOJ 配置的 schema/解析/校验/输出不变，无需改任何 UOJ 数据；唯一行为差异 = C++ 无 `testlib.h` 的 spj 标签由 `testlib` 纠正为 `legacy`。
+
+#### D3（已实现）：Codeforces Polygon 命名约定 importer
+- 约定：输入按序号、**无扩展名**（`1`、`2`、`10`…），答案为同名 + `.a`（`1.a`…）；与 native（`X.in`↔`X.out`/`X.ans`）不重叠。
+- `@libreoj/backend-*` 注册：`@codeforces-polygon`（`priority: 50`、`authoritative: false`，仅 `traditional`）排在 `uoj-data-config`(100) 与 `libreoj-native`(-1000) 之间。
+- 子目录类布局（DOMjudge/Polygon `tests/` 目录等）**不做**：测试数据文件名不能含 `/`。
+
 ### 14.2 明确不做（后置）
 - **problem-type 整体插件化**（把三种题型做成 `problemTypeRegistry` 的插件，加题型=加插件）：**暂不做**。
   原因：`ProblemTypeServiceInterface` 依赖 backend 实体（`ProblemFileEntity`/`FileEntity`）与领域接口

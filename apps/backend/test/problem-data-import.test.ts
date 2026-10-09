@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { nativeImporter } from "../src/problem-data-import/native";
+import { polygonImporter } from "../src/problem-data-import/polygon";
 import { createProblemDataImporterRegistry } from "../src/problem-data-import/registry";
 import { uojConfigImporter } from "../src/problem-data-import/uoj-config";
 import type { ImportContext } from "../src/problem-data-import/importer";
@@ -323,4 +324,43 @@ test("registry prefers the authoritative config importer and falls back to nativ
   const nativeResult = nativeImporter.import(plain, TRADITIONAL);
   assert.equal(nativeResult.subtasks.length, 1);
   assert.deepEqual(nativeResult.subtasks[0].testcases, [{ inputFile: "1.in", outputFile: "1.out" }]);
+});
+
+test("polygon detect: recognizes extension-less inputs paired with N.a, only for traditional", () => {
+  assert.equal(polygonImporter.detect([file("1"), file("2"), file("1.a"), file("2.a")], TRADITIONAL), true);
+  assert.equal(polygonImporter.detect([file("1.in"), file("1.out")], TRADITIONAL), false);
+  assert.equal(polygonImporter.detect([file("3.a")], TRADITIONAL), false, "an answer without its input is not paired");
+  assert.equal(polygonImporter.detect([file("1"), file("1.a")], INTERACTION), false);
+  assert.equal(polygonImporter.detect([file("1"), file("1.a")], SUBMIT_ANSWER), false);
+});
+
+test("polygon import: emits one Sum subtask with numerically sorted pairs", () => {
+  const testData = [file("2"), file("10"), file("1"), file("1.a"), file("10.a"), file("2.a")];
+
+  const result = polygonImporter.import(testData, TRADITIONAL);
+  assert.equal(result.subtasks.length, 1);
+  assert.equal(result.subtasks[0].scoringType, "Sum");
+  assert.deepEqual(result.subtasks[0].testcases, [
+    { inputFile: "1", outputFile: "1.a" },
+    { inputFile: "2", outputFile: "2.a" },
+    { inputFile: "10", outputFile: "10.a" }
+  ]);
+});
+
+test("registry orders polygon between the authoritative config and the native fallback", () => {
+  const registry = createProblemDataImporterRegistry([uojConfigImporter, polygonImporter, nativeImporter]);
+
+  const polygonData = [file("1"), file("2"), file("1.a"), file("2.a")];
+  assert.equal(registry.resolve(polygonData, TRADITIONAL).name, "codeforces-polygon");
+
+  const nativeData = [file("1.in"), file("1.out")];
+  assert.equal(registry.resolve(nativeData, TRADITIONAL).name, "libreoj-native");
+
+  const config = {
+    subtasks: [{ score: 100, type: "sum", cases: [1] }],
+    inputFile: "t#.in",
+    outputFile: "t#.out"
+  };
+  const withConfig = [file("subtasks.json", JSON.stringify(config)), file("t1.in"), file("t1.out")];
+  assert.equal(registry.resolve(withConfig, TRADITIONAL).name, "uoj-data-config");
 });
