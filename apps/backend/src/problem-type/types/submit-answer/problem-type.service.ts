@@ -67,6 +67,7 @@ export class ProblemTypeSubmitAnswerService
     return {
       ...judgeInfo,
       subtasks,
+      ...(result.outputLimit !== undefined ? { outputLimit: result.outputLimit } : {}),
       ...(result.checker ? { checker: result.checker } : {})
     };
   }

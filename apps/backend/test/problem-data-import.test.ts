@@ -5,6 +5,7 @@ import { nativeImporter } from "../src/problem-data-import/native";
 import { polygonImporter } from "../src/problem-data-import/polygon";
 import { createProblemDataImporterRegistry } from "../src/problem-data-import/registry";
 import { uojConfigImporter } from "../src/problem-data-import/uoj-config";
+import { uojProblemConfImporter } from "../src/problem-data-import/uoj-problem-conf";
 import type { ImportContext } from "../src/problem-data-import/importer";
 import { CodeLanguage } from "../src/code-language/code-language.type";
 import type { ProblemFileEntity } from "../src/problem/problem-file.entity";
@@ -363,4 +364,193 @@ test("registry orders polygon between the authoritative config and the native fa
   };
   const withConfig = [file("subtasks.json", JSON.stringify(config)), file("t1.in"), file("t1.out")];
   assert.equal(registry.resolve(withConfig, TRADITIONAL).name, "uoj-data-config");
+});
+
+function conf(lines: string[]): ProblemFileEntity {
+  return file("problem.conf", lines.join("\n"));
+}
+
+test("problem.conf detect: recognizes problem.conf and outranks the data config importer", () => {
+  assert.equal(uojProblemConfImporter.detect([file("PROBLEM.CONF", "n_tests 1")], TRADITIONAL), true);
+  assert.equal(uojProblemConfImporter.detect([file("data.yml", "subtasks: []")], TRADITIONAL), false);
+
+  const registry = createProblemDataImporterRegistry([uojProblemConfImporter, uojConfigImporter, nativeImporter]);
+  const both = [
+    file("problem.conf", "n_tests 1\nuse_builtin_judger on\nuse_builtin_checker ncmp"),
+    file("data.yml", "subtasks: []")
+  ];
+  assert.equal(registry.resolve(both, TRADITIONAL).name, "uoj-problem-conf");
+});
+
+test("problem.conf parses the default filename template, n_tests and the builtin checker", () => {
+  const testData = [
+    conf(["n_tests 2", "time_limit 1", "memory_limit 256", "use_builtin_judger on", "use_builtin_checker ncmp"]),
+    file("input1.txt"),
+    file("output1.txt"),
+    file("input2.txt"),
+    file("output2.txt")
+  ];
+
+  const result = uojProblemConfImporter.import(testData, TRADITIONAL);
+  assert.deepEqual(result.subtasks, [
+    {
+      scoringType: "Sum",
+      testcases: [
+        { inputFile: "input1.txt", outputFile: "output1.txt" },
+        { inputFile: "input2.txt", outputFile: "output2.txt" }
+      ]
+    }
+  ]);
+  assert.deepEqual(result.checker, { type: "testlib", name: "ncmp" });
+});
+
+test("problem.conf honours input_pre/input_suf and output_pre/output_suf", () => {
+  const testData = [
+    conf([
+      "n_tests 1",
+      "input_pre dream",
+      "input_suf in",
+      "output_pre dream",
+      "output_suf ans",
+      "use_builtin_judger on",
+      "use_builtin_checker ncmp"
+    ]),
+    file("dream1.in"),
+    file("dream1.ans")
+  ];
+
+  const { subtasks } = uojProblemConfImporter.import(testData, TRADITIONAL);
+  assert.deepEqual(subtasks[0].testcases, [{ inputFile: "dream1.in", outputFile: "dream1.ans" }]);
+});
+
+test("problem.conf maps n_subtasks/subtask_end_i/subtask_score_i into scored subtasks", () => {
+  const testData = [
+    conf([
+      "n_tests 3",
+      "use_builtin_judger on",
+      "use_builtin_checker ncmp",
+      "n_subtasks 2",
+      "subtask_end_1 2",
+      "subtask_score_1 40",
+      "subtask_end_2 3",
+      "subtask_score_2 60"
+    ]),
+    file("input1.txt"),
+    file("output1.txt"),
+    file("input2.txt"),
+    file("output2.txt"),
+    file("input3.txt"),
+    file("output3.txt")
+  ];
+
+  const { subtasks } = uojProblemConfImporter.import(testData, TRADITIONAL);
+  assert.equal(subtasks.length, 2);
+  assert.equal(subtasks[0].scoringType, "Sum");
+  assert.equal(subtasks[0].points, 40);
+  assert.deepEqual(
+    subtasks[0].testcases.map(tc => tc.inputFile),
+    ["input1.txt", "input2.txt"]
+  );
+  assert.equal(subtasks[1].points, 60);
+  assert.deepEqual(
+    subtasks[1].testcases.map(tc => tc.inputFile),
+    ["input3.txt"]
+  );
+});
+
+test("problem.conf without n_subtasks yields one equal-weight Sum subtask", () => {
+  const testData = [
+    conf(["n_tests 1", "use_builtin_judger on", "use_builtin_checker ncmp"]),
+    file("input1.txt"),
+    file("output1.txt")
+  ];
+
+  const { subtasks } = uojProblemConfImporter.import(testData, TRADITIONAL);
+  assert.equal(subtasks.length, 1);
+  assert.equal(subtasks[0].scoringType, "Sum");
+  assert.equal(subtasks[0].points, undefined);
+});
+
+test("problem.conf converts time_limit seconds to milliseconds and carries memory/output limits", () => {
+  const testData = [
+    conf([
+      "n_tests 1",
+      "time_limit 2",
+      "memory_limit 512",
+      "output_limit 64",
+      "use_builtin_judger on",
+      "use_builtin_checker ncmp"
+    ]),
+    file("input1.txt"),
+    file("output1.txt")
+  ];
+
+  const result = uojProblemConfImporter.import(testData, TRADITIONAL);
+  assert.equal(result.timeLimit, 2000);
+  assert.equal(result.memoryLimit, 512);
+  assert.equal(result.outputLimit, 64);
+});
+
+test("problem.conf validates extra (sample) tests but does not emit them as testcases", () => {
+  const testData = [
+    conf(["n_tests 1", "n_ex_tests 1", "n_sample_tests 1", "use_builtin_judger on", "use_builtin_checker ncmp"]),
+    file("input1.txt"),
+    file("output1.txt"),
+    file("ex_input1.txt"),
+    file("ex_output1.txt")
+  ];
+
+  const { subtasks } = uojProblemConfImporter.import(testData, TRADITIONAL);
+  assert.deepEqual(subtasks[0].testcases, [{ inputFile: "input1.txt", outputFile: "output1.txt" }]);
+
+  const missingExtra = [testData[0], file("input1.txt"), file("output1.txt")];
+  assert.throws(
+    () => uojProblemConfImporter.import(missingExtra, TRADITIONAL),
+    /missing: ex_input1\.txt, ex_output1\.txt/
+  );
+});
+
+test("problem.conf raises clear errors for missing files, a disabled judger, unknown checkers and bad samples", () => {
+  const missing = conf(["n_tests 2", "use_builtin_judger on", "use_builtin_checker ncmp"]);
+  assert.throws(
+    () => uojProblemConfImporter.import([missing, file("input1.txt"), file("output1.txt")], TRADITIONAL),
+    /missing: input2\.txt, output2\.txt/
+  );
+
+  const disabled = conf(["n_tests 1", "use_builtin_judger off", "use_builtin_checker ncmp"]);
+  assert.throws(
+    () => uojProblemConfImporter.import([disabled, file("input1.txt"), file("output1.txt")], TRADITIONAL),
+    /use_builtin_judger on/
+  );
+
+  const unknown = conf(["n_tests 1", "use_builtin_judger on", "use_builtin_checker bogus"]);
+  assert.throws(
+    () => uojProblemConfImporter.import([unknown, file("input1.txt"), file("output1.txt")], TRADITIONAL),
+    /Unsupported builtin checker "bogus"/
+  );
+
+  const badSamples = conf([
+    "n_tests 1",
+    "n_ex_tests 1",
+    "n_sample_tests 2",
+    "use_builtin_judger on",
+    "use_builtin_checker ncmp"
+  ]);
+  assert.throws(
+    () => uojProblemConfImporter.import([badSamples, file("input1.txt"), file("output1.txt")], TRADITIONAL),
+    /"n_sample_tests" \(2\) must not exceed "n_ex_tests" \(1\)/
+  );
+
+  const interaction = conf(["n_tests 1", "interaction_mode on", "use_builtin_judger on", "use_builtin_checker ncmp"]);
+  assert.throws(
+    () => uojProblemConfImporter.import([interaction, file("input1.txt"), file("output1.txt")], TRADITIONAL),
+    /Interaction problems are not supported yet/
+  );
+});
+
+test("problem.conf contentFilenames requests problem.conf only when present, and errors without content", () => {
+  assert.deepEqual(uojProblemConfImporter.contentFilenames?.([file("problem.conf", "n_tests 1")]), ["problem.conf"]);
+  assert.deepEqual(uojProblemConfImporter.contentFilenames?.([file("1.in"), file("1.out")]), []);
+
+  assert.throws(() => uojProblemConfImporter.import([file("problem.conf")], TRADITIONAL), /has no content/);
 });

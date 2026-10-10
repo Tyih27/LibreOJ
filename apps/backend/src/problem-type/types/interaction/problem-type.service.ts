@@ -68,6 +68,9 @@ export class ProblemTypeInteractionService
     return {
       ...judgeInfo,
       subtasks,
+      ...(result.timeLimit !== undefined ? { timeLimit: result.timeLimit } : {}),
+      ...(result.memoryLimit !== undefined ? { memoryLimit: result.memoryLimit } : {}),
+      ...(result.outputLimit !== undefined ? { outputLimit: result.outputLimit } : {}),
       ...(result.interactor ? { interactor: result.interactor } : {}),
       ...(result.extraSourceFiles ? { extraSourceFiles: result.extraSourceFiles } : {})
     };

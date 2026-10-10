@@ -71,6 +71,9 @@ export class ProblemTypeTraditionalService
     return {
       ...judgeInfo,
       subtasks,
+      ...(result.timeLimit !== undefined ? { timeLimit: result.timeLimit } : {}),
+      ...(result.memoryLimit !== undefined ? { memoryLimit: result.memoryLimit } : {}),
+      ...(result.outputLimit !== undefined ? { outputLimit: result.outputLimit } : {}),
       ...(result.checker ? { checker: result.checker } : {}),
       ...(result.extraSourceFiles ? { extraSourceFiles: result.extraSourceFiles } : {})
     };

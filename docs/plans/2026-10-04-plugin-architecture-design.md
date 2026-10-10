@@ -385,6 +385,10 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   `memory_limit`→`memoryLimit`；`use_builtin_checker`→`checker`（依赖 U2）；`output_limit`→`outputLimit`（U2 新字段）。
 - **校验**：被引用文件必须存在；`problem.conf`、`ex_*` 不进入 testcases；`subtask_end_i` 递增且 ≤ `n_tests`；score 合计 ≤100。
 - **验证**：纯函数单测 + 真机导入 `~/HHHOJ/uoj_data/web/data/*`。
+  **已实现**：`uoj-problem-conf.ts`（`priority 200`、authoritative、`contentFilenames=["problem.conf"]`），注册在 `uoj-config` 之前；
+  `ProblemDataImportResult` 增 `timeLimit/memoryLimit/outputLimit`，三题型 preprocess 按需 merge。**已用真实数据核对**：
+  pid=1 → 单 Sum 子任务/10 点/`input1.txt`/1000ms/`ncmp`；pid=2 → 6 子任务 points `[10,10,20,20,10,30]`/`dream1.in`/2000ms；pid=5 → `death*.in`/`wcmp`。
+  额外测试（`ex_*`）与样例（`n_sample_tests`）**U1 仅校验存在**，语义留 U3。
 
 ### 15.3 U2 — 判题补齐（`outputLimit` + 19 个 UOJ checker）
 - **目标**：让 LOJ 判题语义覆盖 UOJ。

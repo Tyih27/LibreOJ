@@ -40,6 +40,14 @@ export interface ProblemDataSubtask {
  */
 export interface ProblemDataImportResult {
   subtasks?: ProblemDataSubtask[];
+  /**
+   * The default time / memory / output limit discovered in a configuration file. A problem type that understands the
+   * field merges it into its judge info; a type that does not simply ignores it. `timeLimit` is in milliseconds,
+   * `memoryLimit` and `outputLimit` are in MiB.
+   */
+  timeLimit?: number;
+  memoryLimit?: number;
+  outputLimit?: number;
   /** A custom checker discovered in a configuration file (traditional / submit-answer problems). */
   checker?: Checker;
   /** An interactor discovered in a configuration file (interaction problems). */
