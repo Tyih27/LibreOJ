@@ -4,7 +4,6 @@ import { tmpdir } from "os";
 import winston from "winston";
 import unzipper from "unzipper";
 
-import { serverSideConfig } from "../../config";
 import { safelyJoinPath, ensureDirectoryEmpty, download } from "../../utils";
 import * as fsNative from "../../fsNative";
 
@@ -44,7 +43,7 @@ export class SubmissionFile {
     return await this.downloadPromise;
   }
 
-  async unzip(wantedFiles: string[]) {
+  async unzip(wantedFiles: string[], outputSizeLimit: number) {
     await ensureDirectoryEmpty(this.unzippedPath);
 
     winston.verbose(`SubmissionFile.unzip: start unzipping file ${this.path}`);
@@ -59,7 +58,7 @@ export class SubmissionFile {
       .on("entry", (entry: unzipper.Entry) => {
         if (entry.type === "File" && wantedFiles.includes(entry.path)) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          if ((entry.vars as any).uncompressedSize <= serverSideConfig.limit.outputSize) {
+          if ((entry.vars as any).uncompressedSize <= outputSizeLimit) {
             // Unzip this file
             writeFilePromises.push(
               new Promise((resolve, reject) => {

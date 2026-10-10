@@ -32,6 +32,12 @@ export interface JudgeInfoTraditional {
   memoryLimit?: number;
 
   /*
+   * The maximum size (in MiB) of a testcase's output.
+   * If not set, the global limit configured on the judge is used.
+   */
+  outputLimit?: number;
+
+  /*
    * Be null if not using file IO
    */
   fileIo?: {
@@ -112,6 +118,7 @@ export async function hashSampleTestcase(
     outputDataHash,
     timeLimit: judgeInfo.timeLimit,
     memoryLimit: judgeInfo.memoryLimit,
+    ...(judgeInfo.outputLimit != null ? { outputLimit: judgeInfo.outputLimit } : {}),
     compileTaskHash: compileResult.compileTaskHash,
     customCheckerCompileTaskHash: customCheckerCompileResult?.compileTaskHash
   });
@@ -138,6 +145,7 @@ export async function hashTestcase(
     outputDataHash,
     timeLimit: testcase.timeLimit || judgeInfo.subtasks[subtaskIndex].timeLimit || judgeInfo.timeLimit,
     memoryLimit: testcase.memoryLimit || judgeInfo.subtasks[subtaskIndex].memoryLimit || judgeInfo.memoryLimit,
+    ...(judgeInfo.outputLimit != null ? { outputLimit: judgeInfo.outputLimit } : {}),
     compileTaskHash: compileResult.compileTaskHash,
     customCheckerCompileTaskHash: customCheckerCompileResult?.compileTaskHash
   });

@@ -27,6 +27,7 @@ return {
       INVALID_MEMORY_LIMIT_TESTCASE: "[TBT] The memory limit of subtask {1}'s testcase {2} is invalid.",
       MEMORY_LIMIT_TOO_LARGE_TESTCASE:
         "[TBT] The memory limit {3} MiB of subtask {1}'s testcase {2} is too large, please contact the admin.",
+      INVALID_OUTPUT_LIMIT: "[TBT] The output limit is invalid.",
       INVALID_FILEIO_FILENAME: "[TBT] The input or output filename {1} is invalid.",
       NO_TESTCASES: "[TBT] No testcases.",
       SUBTASK_HAS_NO_TESTCASES: "[TBT] Subtask {1} has no testcases.",
@@ -86,6 +87,7 @@ return {
   meta: {
     time_limit: "時間制限",
     memory_limit: "メモリ制限",
+    output_limit: "出力制限",
     input_file: "入力ファイル",
     output_file: "出力ファイル",
     use_standard_io: "標準入出力を使用する",

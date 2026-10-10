@@ -181,6 +181,10 @@ export async function runTask(
 ) {
   const { judgeInfo } = task.extraInfo;
 
+  // The per-problem output limit (MiB) takes precedence over the global one.
+  const outputLimit =
+    judgeInfo.outputLimit != null ? judgeInfo.outputLimit * 1024 * 1024 : serverSideConfig.limit.outputSize;
+
   const wantedFiles = judgeInfo.subtasks
     .map(subtask => subtask.testcases.map(testcase => testcase.userOutputFilename || testcase.outputFile))
     .flat();
@@ -194,7 +198,7 @@ export async function runTask(
   await Promise.all([
     (async () => {
       await task.file.waitForDownload();
-      unzipResult = await task.file.unzip(wantedFiles);
+      unzipResult = await task.file.unzip(wantedFiles, outputLimit);
       task.events.compiling(); // Show "Compiling" status after file is downloaded
     })(),
     (async () => {

@@ -10,6 +10,7 @@ import { isValidFilename } from "../../common/validators";
 interface JudgeInfoWithMetaAndSubtasks {
   timeLimit?: number;
   memoryLimit?: number;
+  outputLimit?: number;
 
   fileIo?: {
     inputFilename: string;
@@ -85,6 +86,11 @@ export function validateMetaAndSubtasks(
     validateTimeLimit(judgeInfo.timeLimit, "TASK");
     validateMemoryLimit(judgeInfo.memoryLimit, "TASK");
   }
+
+  // The per-problem output limit applies to every problem type, so it is validated regardless of
+  // `enableTimeMemoryLimit`. An absent value means "use the global limit" and is always allowed.
+  if (judgeInfo.outputLimit != null)
+    if (!Number.isSafeInteger(judgeInfo.outputLimit) || judgeInfo.outputLimit <= 0) throw ["INVALID_OUTPUT_LIMIT"];
 
   if (options.enableFileIo && judgeInfo.fileIo) {
     if (typeof judgeInfo.fileIo.inputFilename !== "string" || !isValidFilename(judgeInfo.fileIo.inputFilename))

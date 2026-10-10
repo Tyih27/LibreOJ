@@ -23,6 +23,7 @@ return {
       MEMORY_LIMIT_TOO_LARGE_SUBTASK: "子任务 {1} 的空间限制 {3} MiB 过大，请联系管理员。",
       INVALID_MEMORY_LIMIT_TESTCASE: "子任务 {1} 的测试点 {2} 的空间限制无效。",
       MEMORY_LIMIT_TOO_LARGE_TESTCASE: "子任务 {1} 的测试点 {2} 的空间限制 {3} MiB 过大，请联系管理员。",
+      INVALID_OUTPUT_LIMIT: "输出限制无效。",
       INVALID_FILEIO_FILENAME: "输入或输出文件名 {1} 无效。",
       NO_TESTCASES: "无测试点。",
       SUBTASK_HAS_NO_TESTCASES: "子任务 {1} 无测试点。",
@@ -80,6 +81,7 @@ return {
   meta: {
     time_limit: "时间限制",
     memory_limit: "内存限制",
+    output_limit: "输出限制",
     input_file: "输入文件",
     output_file: "输出文件",
     use_standard_io: "使用标准输入输出",

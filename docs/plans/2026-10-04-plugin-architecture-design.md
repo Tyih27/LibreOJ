@@ -388,7 +388,10 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 
 ### 15.3 U2 — 判题补齐（`outputLimit` + 19 个 UOJ checker）
 - **目标**：让 LOJ 判题语义覆盖 UOJ。
-- **`outputLimit`**：judgeInfo 新增每题输出上限（UOJ `output_limit`，MB），并在 judge 侧生效（LOJ 现仅有全局 `judge.limit.outputSize`）。
+- **`outputLimit`**：judgeInfo 新增每题输出上限（UOJ `output_limit`，MiB），并在 judge 侧生效（LOJ 现仅有全局 `judge.limit.outputSize`）。
+  **已实现（提交 7e597f06 起）**：traditional / submit-answer 改为"每题优先、回退全局"；**interaction 暂不生效**——
+  LOJ 的交互沙箱对管道输出无字节上限，要实现需在 judge 内加中继（改动 用户→交互器 数据路径），风险高且本机无法真机验证，
+  故维持原行为（未设时不限制）。未设 `outputLimit` 时**所有题型行为不变**。
 - **19 个 UOJ 内建 checker（全部搬入，用户要求）**，均为 testlib 实现：
   `acmp bcmp caseicmp casencmp casewcmp dcmp fcmp hcmp icmp lcmp ncmp rcmp rcmp4 rcmp6 rcmp9 rncmp uncmp wcmp yesno`
   （语义见 UOJ `builtin/checker/*.cpp` 的 `setName`）。注意 **`ncmp` 与 LOJ `integers` 算法逐字相同**，`rcmp4/6/9`=浮点容差 1e-5/7/10 等。

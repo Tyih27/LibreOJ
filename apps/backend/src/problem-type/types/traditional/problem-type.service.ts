@@ -104,6 +104,7 @@ export class ProblemTypeTraditionalService
     restrictProperties(judgeInfo, [
       "timeLimit",
       "memoryLimit",
+      "outputLimit",
       "fileIo",
       "runSamples",
       "subtasks",

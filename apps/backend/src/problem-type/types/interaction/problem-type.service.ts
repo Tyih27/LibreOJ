@@ -138,6 +138,7 @@ export class ProblemTypeInteractionService
     restrictProperties(judgeInfo, [
       "timeLimit",
       "memoryLimit",
+      "outputLimit",
       "runSamples",
       "subtasks",
       "interactor",

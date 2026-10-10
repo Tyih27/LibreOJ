@@ -23,6 +23,12 @@ export interface TestcaseConfig {
 
 export interface JudgeInfoSubmitAnswer {
   /*
+   * The maximum size (in MiB) of a testcase's output.
+   * If not set, the global limit configured on the judge is used.
+   */
+  outputLimit?: number;
+
+  /*
    * There could be multiple subtasks in a problem
    * Each subtask contains some testcases
    */
@@ -93,6 +99,7 @@ export async function hashTestcase(
     inputDataHash,
     outputDataHash,
     userOutputFilename: testcase.userOutputFilename || testcase.outputFile,
+    ...(judgeInfo.outputLimit != null ? { outputLimit: judgeInfo.outputLimit } : {}),
     customCheckerCompileTaskHash: customCheckerCompileResult && customCheckerCompileResult.compileTaskHash
   });
 }

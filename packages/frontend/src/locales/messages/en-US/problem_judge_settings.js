@@ -25,6 +25,7 @@ return {
       INVALID_MEMORY_LIMIT_TESTCASE: "The memory limit of subtask {1}'s testcase {2} is invalid.",
       MEMORY_LIMIT_TOO_LARGE_TESTCASE:
         "The memory limit {3} MiB of subtask {1}'s testcase {2} is too large, please contact the admin.",
+      INVALID_OUTPUT_LIMIT: "The output limit is invalid.",
       INVALID_FILEIO_FILENAME: "The input or output filename {1} is invalid.",
       NO_TESTCASES: "No testcases.",
       SUBTASK_HAS_NO_TESTCASES: "Subtask {1} has no testcases.",
@@ -82,6 +83,7 @@ return {
   meta: {
     time_limit: "Time limit",
     memory_limit: "Memory limit",
+    output_limit: "Output limit",
     input_file: "Input file",
     output_file: "Output file",
     use_standard_io: "Use standard IO",

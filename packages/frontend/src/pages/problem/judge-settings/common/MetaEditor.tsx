@@ -10,6 +10,7 @@ import { JudgeInfoProcessor, EditorComponentProps } from "./interface";
 export interface JudgeInfoWithMeta {
   timeLimit?: number;
   memoryLimit?: number;
+  outputLimit?: number;
   fileIo?: {
     inputFilename: string;
     outputFilename: string;
@@ -68,6 +69,23 @@ let MetaEditor: React.FC<MetaEditorProps> = props => {
             </Form.Field>
           </Form.Group>
         )}
+        <Form.Group>
+          <Form.Field width={8}>
+            <label>{_(".meta.output_limit")}</label>
+            <Input
+              className={style.labeledInput}
+              value={judgeInfo.outputLimit == null ? "" : judgeInfo.outputLimit}
+              label="MiB"
+              labelPosition="right"
+              icon="database"
+              iconPosition="left"
+              onChange={(e, { value }) =>
+                (value === "" || (Number.isSafeInteger(Number(value)) && Number(value) > 0)) &&
+                props.onUpdateJudgeInfo({ outputLimit: value === "" ? null : Number(value) })
+              }
+            />
+          </Form.Field>
+        </Form.Group>
         {props.options.enableFileIo && judgeInfo.fileIo && (
           <Form.Group>
             <Form.Field width={8}>
@@ -136,6 +154,7 @@ const judgeInfoProcessor: JudgeInfoProcessor<JudgeInfoWithMeta, MetaEditorOption
     return {
       timeLimit: options.enableTimeMemoryLimit && Number.isSafeInteger(raw.timeLimit) ? raw.timeLimit : null,
       memoryLimit: options.enableTimeMemoryLimit && Number.isSafeInteger(raw.memoryLimit) ? raw.memoryLimit : null,
+      outputLimit: Number.isSafeInteger(raw.outputLimit) && raw.outputLimit > 0 ? raw.outputLimit : null,
       fileIo:
         options.enableFileIo &&
         raw.fileIo &&
@@ -154,6 +173,7 @@ const judgeInfoProcessor: JudgeInfoProcessor<JudgeInfoWithMeta, MetaEditorOption
       delete judgeInfo.timeLimit;
       delete judgeInfo.memoryLimit;
     }
+    if (judgeInfo.outputLimit == null) delete judgeInfo.outputLimit;
     if (!judgeInfo.runSamples) delete judgeInfo.runSamples;
     if (!judgeInfo.fileIo) delete judgeInfo.fileIo;
   }

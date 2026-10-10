@@ -97,6 +97,10 @@ async function runTestcase(
 
   const isSample = sampleId != null;
 
+  // The per-problem output limit (MiB) takes precedence over the global one.
+  const outputLimit =
+    judgeInfo.outputLimit != null ? judgeInfo.outputLimit * 1024 * 1024 : serverSideConfig.limit.outputSize;
+
   const timeLimit = isSample ? judgeInfo.timeLimit : testcase.timeLimit;
   const memoryLimit = isSample ? judgeInfo.memoryLimit : testcase.memoryLimit;
 
@@ -168,7 +172,7 @@ async function runTestcase(
 
   const workingDirectorySize = await fsNative.calcSize(workingDirectory.outside);
   const inputFileSize = await fsNative.calcSize(inputFile.outside);
-  if (workingDirectorySize - inputFileSize > serverSideConfig.limit.outputSize) {
+  if (workingDirectorySize - inputFileSize > outputLimit) {
     result.status = TestcaseStatusTraditional.OutputLimitExceeded;
   } else if (sandboxResult.status === SandboxStatus.TimeLimitExceeded) {
     result.status = TestcaseStatusTraditional.TimeLimitExceeded;

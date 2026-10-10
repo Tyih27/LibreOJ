@@ -91,7 +91,7 @@ export class ProblemTypeSubmitAnswerService
       hardMemoryLimit: ignoreLimits ? null : this.configService.config.resourceLimit.problemMemoryLimit
     });
 
-    restrictProperties(judgeInfo, ["subtasks", "checker"]);
+    restrictProperties(judgeInfo, ["subtasks", "outputLimit", "checker"]);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
