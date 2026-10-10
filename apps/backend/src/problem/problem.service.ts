@@ -43,6 +43,11 @@ import { FileService } from "../file/file.service";
 import { logger } from "../logger";
 import { PROBLEM_DATA_CONFIG_FILENAMES } from "../problem-data-import/uoj-config";
 import { planArchiveEntries, PlannedArchiveFile } from "../problem-data-import/archive";
+import {
+  buildUojSamples,
+  UOJ_EXTRA_TEST_PREFIX,
+  UOJ_PROBLEM_CONF_FILENAME
+} from "../problem-data-import/uoj-problem-conf";
 import { getProblemDataImporters } from "../plugin/services";
 import { ConfigService } from "../config/config.service";
 import { RedisService } from "../redis/redis.service";
@@ -932,6 +937,13 @@ export class ProblemService {
         if (totalSize > sizeLimit) return "TOTAL_SIZE_TOO_LARGE";
 
         // Every check passed; now the archive replaces the problem's testdata.
+        // A UOJ `problem.conf` archive additionally mirrors its sample tests into the problem statement as part of the
+        // same replacement; any other archive leaves the samples untouched. The archive is already bounded by
+        // `sizeLimit`, so caching the config and `ex_*` files in memory here is bounded too.
+        const problemConfName =
+          planned.find(file => file.name.toLowerCase() === UOJ_PROBLEM_CONF_FILENAME)?.name ?? null;
+        const uojFileContents = problemConfName === null ? null : new Map<string, string>();
+
         const createdFileUuids: string[] = [];
         try {
           await this.clearProblemTestData(problem);
@@ -942,6 +954,12 @@ export class ProblemService {
             const fileUuid = UUID();
             await this.fileService.uploadFile(fileUuid, content);
             createdFileUuids.push(fileUuid);
+
+            if (
+              uojFileContents &&
+              (planned[i].name === problemConfName || planned[i].name.toLowerCase().startsWith(UOJ_EXTRA_TEST_PREFIX))
+            )
+              uojFileContents.set(planned[i].name, content.toString("utf8"));
 
             await this.connection.transaction("READ COMMITTED", async transactionalEntityManager => {
               const fileEntity = new FileEntity();
@@ -966,6 +984,32 @@ export class ProblemService {
         }
 
         await this.redisService.cacheDelete(REDIS_KEY_PROBLEM_PREPROCESSED_JUDGE_INFO.format(problem.id));
+
+        // Mirror the UOJ samples into the problem statement once the testdata has landed. Replacing all testdata
+        // consistently replaces the samples, but only for a UOJ `problem.conf` package. This is best-effort: a
+        // malformed config or a database error is only warned about and never fails the testdata import itself.
+        if (problemConfName !== null && uojFileContents !== null) {
+          try {
+            const samples = buildUojSamples(uojFileContents.get(problemConfName) ?? "", name =>
+              uojFileContents.get(name)
+            );
+            if (samples.length > 0)
+              await this.connection.transaction("READ COMMITTED", async transactionalEntityManager => {
+                let problemSample = await transactionalEntityManager.findOneBy(ProblemSampleEntity, {
+                  problemId: problem.id
+                });
+                if (!problemSample) {
+                  problemSample = new ProblemSampleEntity();
+                  problemSample.problemId = problem.id;
+                }
+                problemSample.data = samples;
+                await transactionalEntityManager.save(ProblemSampleEntity, problemSample);
+              });
+          } catch (e) {
+            logger.warn(`Failed to import UOJ samples of problem ${problem.id}: ${e}`);
+          }
+        }
+
         return null;
       } finally {
         await fs.promises.rm(tempDirectory, { recursive: true, force: true });

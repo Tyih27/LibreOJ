@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 
 import { nativeImporter } from "../src/problem-data-import/native";
 import { polygonImporter } from "../src/problem-data-import/polygon";
 import { createProblemDataImporterRegistry } from "../src/problem-data-import/registry";
 import { uojConfigImporter } from "../src/problem-data-import/uoj-config";
-import { uojProblemConfImporter } from "../src/problem-data-import/uoj-problem-conf";
+import { buildUojSamples, uojProblemConfImporter } from "../src/problem-data-import/uoj-problem-conf";
 import type { ImportContext } from "../src/problem-data-import/importer";
 import { CodeLanguage } from "../src/code-language/code-language.type";
 import type { ProblemFileEntity } from "../src/problem/problem-file.entity";
@@ -554,3 +556,84 @@ test("problem.conf contentFilenames requests problem.conf only when present, and
 
   assert.throws(() => uojProblemConfImporter.import([file("problem.conf")], TRADITIONAL), /has no content/);
 });
+
+test("buildUojSamples reads every sample with the default filename template", () => {
+  const contents = new Map([
+    ["ex_input1.txt", "1\n"],
+    ["ex_output1.txt", "1\n"],
+    ["ex_input2.txt", "2\n"],
+    ["ex_output2.txt", "4\n"]
+  ]);
+  const samples = buildUojSamples(["n_ex_tests 2", "n_sample_tests 2"].join("\n"), name => contents.get(name));
+
+  assert.deepEqual(samples, [
+    { inputData: "1\n", outputData: "1\n" },
+    { inputData: "2\n", outputData: "4\n" }
+  ]);
+});
+
+test("buildUojSamples honours input_pre/input_suf and output_pre/output_suf", () => {
+  const contents = new Map([
+    ["ex_dream1.in", "in\n"],
+    ["ex_dream1.ans", "ans\n"]
+  ]);
+  const conf = [
+    "n_ex_tests 1",
+    "n_sample_tests 1",
+    "input_pre dream",
+    "input_suf in",
+    "output_pre dream",
+    "output_suf ans"
+  ].join("\n");
+  const samples = buildUojSamples(conf, name => contents.get(name));
+
+  assert.deepEqual(samples, [{ inputData: "in\n", outputData: "ans\n" }]);
+});
+
+test("buildUojSamples returns no samples when n_sample_tests is zero or absent", () => {
+  assert.deepEqual(buildUojSamples("n_ex_tests 1", () => "x"), []);
+  assert.deepEqual(buildUojSamples("n_ex_tests 1\nn_sample_tests 0", () => "x"), []);
+});
+
+test("buildUojSamples skips a sample whose input or output content is missing", () => {
+  const contents = new Map([
+    ["ex_input1.txt", "1\n"],
+    // ex_output1.txt is missing -> skipped
+    ["ex_input2.txt", "2\n"],
+    ["ex_output2.txt", "4\n"]
+    // ex_output3.txt is missing -> skipped
+  ]);
+  contents.set("ex_input3.txt", "3\n");
+  const samples = buildUojSamples(["n_ex_tests 3", "n_sample_tests 3"].join("\n"), name => contents.get(name));
+
+  assert.deepEqual(samples, [{ inputData: "2\n", outputData: "4\n" }]);
+});
+
+test("buildUojSamples rejects n_sample_tests exceeding n_ex_tests", () => {
+  assert.throws(
+    () => buildUojSamples("n_ex_tests 1\nn_sample_tests 2", () => "x"),
+    /"n_sample_tests" \(2\) must not exceed "n_ex_tests" \(1\)/
+  );
+});
+
+/** A real UOJ data directory, used to check the sample builder against genuine files when it is present. */
+const UOJ_SAMPLE_DATA_DIR = "/home/tyih/HHHOJ/uoj_data/web/data/2";
+
+test(
+  "buildUojSamples matches the real UOJ problem.conf package",
+  { skip: !fs.existsSync(path.join(UOJ_SAMPLE_DATA_DIR, "problem.conf")) },
+  () => {
+    const read = (name: string) => {
+      const filePath = path.join(UOJ_SAMPLE_DATA_DIR, name);
+      return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : undefined;
+    };
+
+    const samples = buildUojSamples(read("problem.conf") ?? "", read);
+
+    assert.equal(samples.length, 2);
+    assert.equal(samples[0].inputData, read("ex_dream1.in"));
+    assert.equal(samples[0].outputData, read("ex_dream1.ans"));
+    assert.equal(samples[1].inputData, read("ex_dream2.in"));
+    assert.equal(samples[1].outputData, read("ex_dream2.ans"));
+  }
+);

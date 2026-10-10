@@ -2,6 +2,7 @@ import type { ProblemDataImporter, ProblemDataImportResult, ProblemDataSubtask }
 
 import { TESTLIB_CHECKER_NAMES } from "../problem-type/common/checker";
 import type { ProblemFileEntity } from "../problem/problem-file.entity";
+import type { ProblemSampleData } from "../problem/problem-sample-data.interface";
 
 /**
  * The UOJ `problem.conf` importer.
@@ -19,6 +20,9 @@ import type { ProblemFileEntity } from "../problem/problem-file.entity";
 /** The configuration filename recognized by this importer, compared case-insensitively. */
 export const UOJ_PROBLEM_CONF_FILENAME = "problem.conf";
 
+/** The prefix marking the extra tests (UOJ's `ex_*` files); the first `n_sample_tests` of them are the samples. */
+export const UOJ_EXTRA_TEST_PREFIX = "ex_";
+
 /**
  * Keys that turn a `problem.conf` into a problem type this importer does not handle yet. They are rejected explicitly
  * rather than silently imported as a traditional problem.
@@ -29,12 +33,12 @@ function findConfFile(testData: ProblemFileEntity[]): ProblemFileEntity | undefi
   return testData.find(file => file.filename.toLowerCase() === UOJ_PROBLEM_CONF_FILENAME);
 }
 
-/** Parses the `key value` line format. Values are single whitespace-delimited tokens, matching UOJ's reader. */
-function parseProblemConf(file: ProblemFileEntity): Record<string, string> {
-  const { content } = file;
-  if (typeof content !== "string")
-    throw new Error(`Testdata file "${file.filename}" has no content to parse as a UOJ problem.conf`);
-
+/**
+ * Parses the `problem.conf` `key value` line format. Values are single whitespace-delimited tokens, matching UOJ's
+ * reader. Pure: it works on the content and the filename only for error reporting, so importers and the sample
+ * builder share it without touching the filesystem or an entity.
+ */
+export function parseProblemConfContent(content: string, filename: string): Record<string, string> {
   const conf: Record<string, string> = {};
   content.split("\n").forEach((raw, index) => {
     const line = raw.trim();
@@ -42,15 +46,21 @@ function parseProblemConf(file: ProblemFileEntity): Record<string, string> {
 
     const parts = line.split(/\s+/);
     if (parts.length < 2)
-      throw new Error(
-        `Malformed line ${index + 1} in "${file.filename}": expected "key value", got ${JSON.stringify(raw)}`
-      );
+      throw new Error(`Malformed line ${index + 1} in "${filename}": expected "key value", got ${JSON.stringify(raw)}`);
 
     const [key, value] = parts;
-    if (key in conf) throw new Error(`Duplicate key ${JSON.stringify(key)} in "${file.filename}"`);
+    if (key in conf) throw new Error(`Duplicate key ${JSON.stringify(key)} in "${filename}"`);
     conf[key] = value;
   });
   return conf;
+}
+
+/** Parses a `problem.conf` entity, requiring its content to have been loaded. */
+function parseProblemConf(file: ProblemFileEntity): Record<string, string> {
+  const { content } = file;
+  if (typeof content !== "string")
+    throw new Error(`Testdata file "${file.filename}" has no content to parse as a UOJ problem.conf`);
+  return parseProblemConfContent(content, file.filename);
 }
 
 function readInt(conf: Record<string, string>, key: string, filename: string, defaultValue?: number): number {
@@ -127,6 +137,23 @@ function buildSubtasks(
   return subtasks;
 }
 
+/** The input/output filename templates a `problem.conf` points at, with UOJ's `input`/`output` + `txt` defaults. */
+interface TestFilenameTemplates {
+  input: (num: number) => string;
+  output: (num: number) => string;
+}
+
+function testFilenameTemplates(conf: Record<string, string>): TestFilenameTemplates {
+  const inputPre = conf.input_pre ?? "input";
+  const inputSuf = conf.input_suf ?? "txt";
+  const outputPre = conf.output_pre ?? "output";
+  const outputSuf = conf.output_suf ?? "txt";
+  return {
+    input: (num: number) => `${inputPre}${num}.${inputSuf}`,
+    output: (num: number) => `${outputPre}${num}.${outputSuf}`
+  };
+}
+
 function importProblemConf(testData: ProblemFileEntity[]): ProblemDataImportResult {
   const file = findConfFile(testData);
   if (!file) throw new Error("No problem.conf found in testdata");
@@ -152,12 +179,7 @@ function importProblemConf(testData: ProblemFileEntity[]): ProblemDataImportResu
   const nTests = readInt(conf, "n_tests", filename, 10);
   if (nTests <= 0) throw new Error(`"n_tests" must be a positive integer in "${filename}"`);
 
-  const inputPre = conf.input_pre ?? "input";
-  const inputSuf = conf.input_suf ?? "txt";
-  const outputPre = conf.output_pre ?? "output";
-  const outputSuf = conf.output_suf ?? "txt";
-  const inputFilename = (num: number) => `${inputPre}${num}.${inputSuf}`;
-  const outputFilename = (num: number) => `${outputPre}${num}.${outputSuf}`;
+  const { input: inputFilename, output: outputFilename } = testFilenameTemplates(conf);
   const testcaseOf = (num: number): Testcase => ({ inputFile: inputFilename(num), outputFile: outputFilename(num) });
 
   // Reference validation: every test the config points at must exist in the testdata. The extra (sample) tests are
@@ -175,8 +197,8 @@ function importProblemConf(testData: ProblemFileEntity[]): ProblemDataImportResu
 
   const nExTests = readInt(conf, "n_ex_tests", filename, 0);
   for (let num = 1; num <= nExTests; num++) {
-    requireFile(`ex_${inputFilename(num)}`);
-    requireFile(`ex_${outputFilename(num)}`);
+    requireFile(`${UOJ_EXTRA_TEST_PREFIX}${inputFilename(num)}`);
+    requireFile(`${UOJ_EXTRA_TEST_PREFIX}${outputFilename(num)}`);
   }
 
   const nSampleTests = readInt(conf, "n_sample_tests", filename, 0);
@@ -198,6 +220,41 @@ function importProblemConf(testData: ProblemFileEntity[]): ProblemDataImportResu
   if (outputLimit !== undefined) result.outputLimit = outputLimit;
 
   return result;
+}
+
+/**
+ * Builds the sample test cases of a UOJ `problem.conf` problem.
+ *
+ * UOJ keeps sample tests alongside the regular tests as extra tests named with an {@link UOJ_EXTRA_TEST_PREFIX} prefix:
+ * `ex_<input_pre><i>.<input_suf>` / `ex_<output_pre><i>.<output_suf>`. The first `n_sample_tests` extra tests are the
+ * samples. Content is read through the supplied callback (`undefined` means "not present"); a sample whose input or
+ * output is missing is skipped rather than failing the whole import. The returned array preserves the extra-test order.
+ *
+ * Pure: this never touches the filesystem or an entity, so it can be unit-tested against a plain map of file contents.
+ *
+ * @throws If `n_sample_tests` exceeds `n_ex_tests` (a sample must be one of the extra tests). Callers treat a thrown
+ * error as non-fatal -- the sample import is best-effort and must not break the testdata import.
+ */
+export function buildUojSamples(
+  confContent: string,
+  readFileContent: (filename: string) => string | undefined
+): ProblemSampleData {
+  const conf = parseProblemConfContent(confContent, UOJ_PROBLEM_CONF_FILENAME);
+
+  const nExTests = readInt(conf, "n_ex_tests", UOJ_PROBLEM_CONF_FILENAME, 0);
+  const nSampleTests = readInt(conf, "n_sample_tests", UOJ_PROBLEM_CONF_FILENAME, 0);
+  if (nSampleTests > nExTests)
+    throw new Error(`"n_sample_tests" (${nSampleTests}) must not exceed "n_ex_tests" (${nExTests})`);
+
+  const { input, output } = testFilenameTemplates(conf);
+  const samples: ProblemSampleData = [];
+  for (let num = 1; num <= nSampleTests; num++) {
+    const inputData = readFileContent(`${UOJ_EXTRA_TEST_PREFIX}${input(num)}`);
+    const outputData = readFileContent(`${UOJ_EXTRA_TEST_PREFIX}${output(num)}`);
+    if (inputData === undefined || outputData === undefined) continue;
+    samples.push({ inputData, outputData });
+  }
+  return samples;
 }
 
 export const uojProblemConfImporter: ProblemDataImporter = {

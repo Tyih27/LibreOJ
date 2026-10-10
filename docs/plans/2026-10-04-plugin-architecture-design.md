@@ -407,6 +407,10 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **目标**：建模 UOJ 的额外测试与样例：`ex_input1..M`（+ `ex_output1..M`），`M=n_ex_tests`；
   **前 `n_sample_tests` 个即样例**（约束 `n_sample_tests ≤ n_ex_tests`）。
 - U1 仅**识别/校验**这些文件存在；**语义（是否参与评分/校验、样例如何展示）留 U3** 单独定。
+  **已实现（U3）**：正常判题**只跑 `n_tests`**，`ex_*` **不参与评分**（UOJ 亦然），仅用于 (a) 样例、(b) hack。
+  U3 在**归档导入**时（仅当含 `problem.conf`）：把前 `n_sample_tests` 个 `ex_*` 的内容写为**题面样例**（覆盖；`buildUojSamples` 纯函数，真实数据已核对），
+  `ex_*` 文件仍作为 TestData 保留（= hack 数据）。非 UOJ 包不动样例；样例写入**非致命**（失败仅告警）。
+  局限：样例仅在题面 section 引用时显示；题面导入不在本轮。
 
 ### 15.5 U4 — Hack（大功能，单独立项）
 - **目标**：实现 UOJ 的 Hack（用户提交测试，检验目标提交/标准解）。
