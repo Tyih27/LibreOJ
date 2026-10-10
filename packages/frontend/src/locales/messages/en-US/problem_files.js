@@ -20,6 +20,11 @@ return {
   selected_files_count_and_size: "Selected {count} files, {totalSize} in total",
   selected_files_count_and_size_narrow: "Selected {count} files\n{totalSize} in total",
   upload: "Upload",
+  import_archive: "Import Archive",
+  import_archive_invalid: "Please select a .zip archive.",
+  import_archive_success: "Test data imported.",
+  confirm_import_archive_question: "Be sure to import this archive? It REPLACES all existing test data.",
+  confirm_import_archive: "Confirm",
   confirm_override_question: "Be sure to override file(s) below?",
   confirm_override: "Confirm",
   progress_waiting: "Waiting",
@@ -39,6 +44,9 @@ return {
     TOO_MANY_FILES: "Too many files. Please contact the administrator.",
     TOTAL_SIZE_TOO_LARGE: "Files total size too large. Please contact the administrator.",
     FILE_UUID_EXISTS: "Unknown error.",
-    FILE_NOT_UPLOADED: "Couldn't find uploaded file."
+    FILE_NOT_UPLOADED: "Couldn't find uploaded file.",
+    ARCHIVE_NOT_UPLOADED: "Couldn't find the uploaded archive.",
+    INVALID_ARCHIVE: "The archive is not a readable zip, or its files can't be mapped to valid filenames.",
+    ARCHIVE_TOO_LARGE: "The archive is too large. Please contact the administrator."
   }
 };

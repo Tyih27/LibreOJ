@@ -387,6 +387,7 @@ interface FileTableProps {
   onRenameFile: (filename: string, newFilename: string) => Promise<void>;
   onDeleteFiles: (filenames: string[]) => Promise<void>;
   onUploadFiles: (files: File[]) => void;
+  onImportArchive?: (file: File) => Promise<void>;
 }
 
 let FileTable: React.FC<FileTableProps> = props => {
@@ -452,6 +453,42 @@ let FileTable: React.FC<FileTableProps> = props => {
 
   const [overridingFiles, setOverridingFiles] = useState<string[]>([]);
   const refDoUpload = useRef<() => void>();
+
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false);
+  const [importPending, setImportPending] = useState(false);
+  const refImportFile = useRef<File>();
+
+  function onImportButtonClick() {
+    if (uploadingCount || importPending) return;
+
+    openUploadDialog(files => {
+      if (files.length === 0) return;
+
+      const file = files[0];
+      if (!/\.zip$/i.test(file.name)) {
+        toast.error(_(".import_archive_invalid"));
+        return;
+      }
+
+      refImportFile.current = file;
+      setImportConfirmOpen(true);
+    }, ".zip");
+  }
+
+  async function onImportConfirm() {
+    const file = refImportFile.current;
+    if (!file || !props.onImportArchive) return;
+
+    refImportFile.current = undefined;
+    setImportConfirmOpen(false);
+    setImportPending(true);
+    try {
+      await props.onImportArchive(file);
+    } finally {
+      setImportPending(false);
+    }
+  }
+
   async function onUploadButtonClick() {
     if (uploadingCount) return;
 
@@ -607,48 +644,79 @@ let FileTable: React.FC<FileTableProps> = props => {
                   )}
                 </div>
                 {props.hasPermission && (
-                  <Popup
-                    trigger={
-                      <Button
-                        className={style.tableFooterButton}
-                        icon="upload"
-                        content={_(".upload")}
-                        labelPosition="left"
-                        primary
-                        size={"small"}
-                        loading={uploadingCount !== 0}
-                        onClick={onUploadButtonClick}
-                      />
-                    }
-                    open={overridingFiles.length !== 0}
-                    onClose={() => setOverridingFiles([])}
-                    content={
-                      <>
-                        <p>
-                          <strong>{_(".confirm_override_question")}</strong>
-                        </p>
-                        <List>
-                          {overridingFiles.map(filename => (
-                            <EmojiRenderer key={filename}>
-                              <List.Item icon={getFileIcon(filename)} content={filename} />
-                            </EmojiRenderer>
-                          ))}
-                        </List>
-                        <Ref innerRef={button => button && window.requestAnimationFrame(() => button.focus())}>
+                  <div className={style.tableFooterButtons}>
+                    {props.onImportArchive && (
+                      <Popup
+                        trigger={
                           <Button
-                            onClick={() => {
-                              setOverridingFiles([]);
-                              refDoUpload.current();
-                            }}
-                          >
-                            {_(".confirm_override")}
-                          </Button>
-                        </Ref>
-                      </>
-                    }
-                    on="click"
-                    position="left center"
-                  />
+                            icon="file archive"
+                            content={_(".import_archive")}
+                            labelPosition="left"
+                            size={"small"}
+                            loading={importPending}
+                            disabled={uploadingCount !== 0}
+                            onClick={onImportButtonClick}
+                          />
+                        }
+                        open={importConfirmOpen}
+                        onClose={() => setImportConfirmOpen(false)}
+                        content={
+                          <>
+                            <p>
+                              <strong>{_(".confirm_import_archive_question")}</strong>
+                            </p>
+                            <Ref innerRef={button => button && window.requestAnimationFrame(() => button.focus())}>
+                              <Button onClick={onImportConfirm}>{_(".confirm_import_archive")}</Button>
+                            </Ref>
+                          </>
+                        }
+                        on="click"
+                        position="left center"
+                      />
+                    )}
+                    <Popup
+                      trigger={
+                        <Button
+                          icon="upload"
+                          content={_(".upload")}
+                          labelPosition="left"
+                          primary
+                          size={"small"}
+                          loading={uploadingCount !== 0}
+                          disabled={importPending}
+                          onClick={onUploadButtonClick}
+                        />
+                      }
+                      open={overridingFiles.length !== 0}
+                      onClose={() => setOverridingFiles([])}
+                      content={
+                        <>
+                          <p>
+                            <strong>{_(".confirm_override_question")}</strong>
+                          </p>
+                          <List>
+                            {overridingFiles.map(filename => (
+                              <EmojiRenderer key={filename}>
+                                <List.Item icon={getFileIcon(filename)} content={filename} />
+                              </EmojiRenderer>
+                            ))}
+                          </List>
+                          <Ref innerRef={button => button && window.requestAnimationFrame(() => button.focus())}>
+                            <Button
+                              onClick={() => {
+                                setOverridingFiles([]);
+                                refDoUpload.current();
+                              }}
+                            >
+                              {_(".confirm_override")}
+                            </Button>
+                          </Ref>
+                        </>
+                      }
+                      on="click"
+                      position="left center"
+                    />
+                  </div>
                 )}
               </div>
             </Table.HeaderCell>
@@ -843,6 +911,87 @@ let ProblemFilesPage: React.FC<ProblemFilesPageProps> = props => {
     });
   }
 
+  async function onImportArchive(file: File) {
+    const itemUuid = uuid();
+    const item: FileTableItem = {
+      uuid: itemUuid,
+      filename: file.name,
+      size: file.size,
+      upload: {
+        file: file,
+        progressType: "Waiting"
+      }
+    };
+    setFileListTestData(fileList => fileList.filter(file => file.filename !== item.filename).concat(item));
+
+    function updateFileUploadInfo(uploadInfo: Partial<FileUploadInfo>) {
+      setFileListTestData(fileList =>
+        Array.from(fileList).map(file =>
+          file.uuid !== itemUuid
+            ? file
+            : Object.assign({}, file, {
+                upload: uploadInfo ? Object.assign({}, file.upload, uploadInfo) : null
+              })
+        )
+      );
+    }
+
+    const { uploadCancelled, uploadError, requestError, response } = await callApiWithFileUpload(
+      api.problem.importProblemTestDataArchive,
+      {
+        problemId: props.problem.meta.id
+      },
+      () => Promise.resolve(""),
+      file,
+      progress =>
+        updateFileUploadInfo({
+          progressType: progress.status,
+          progress: progress.progress * 100
+        }),
+      cancelFunction =>
+        updateFileUploadInfo({
+          cancel: cancelFunction
+        })
+    );
+
+    if (uploadCancelled) {
+      updateFileUploadInfo({
+        progressType: "Cancelled",
+        cancel: null
+      });
+    } else if (uploadError) {
+      console.log("Error importing testdata archive", uploadError);
+      updateFileUploadInfo({
+        progressType: "Error",
+        error: String(uploadError)
+      });
+    } else if (requestError) {
+      updateFileUploadInfo({
+        progressType: "Error",
+        error: requestError(_)
+      });
+    } else if (response.error) {
+      updateFileUploadInfo({
+        progressType: "Error",
+        error: _(`.error.${response.error}`)
+      });
+    } else {
+      toast.success(_(".import_archive_success"));
+
+      // The import replaced all testdata; reload the list so it reflects the new archive.
+      const { requestError: refreshRequestError, response: refreshed } = await api.problem.getProblem({
+        id: props.problem.meta.id,
+        testData: true
+      });
+      if (refreshRequestError || refreshed.error || !refreshed.testData) {
+        // The import succeeded but the list could not be reloaded; drop the transient entry.
+        setFileListTestData(fileList => fileList.filter(file => file.uuid !== itemUuid));
+        if (refreshRequestError) toast.error(refreshRequestError(_));
+        else if (refreshed.error) toast.error(_(`.error.${refreshed.error}`));
+      } else setFileListTestData(transformResponseToFileTableItems(refreshed.testData));
+    }
+  }
+
   const isWideScreen = useScreenWidthWithin(960, Infinity);
 
   const fileTableTestdata = (
@@ -875,6 +1024,7 @@ let ProblemFilesPage: React.FC<ProblemFilesPageProps> = props => {
         onRenameFile={(filename, newFilename) => onRenameFile("TestData", setFileListTestData, filename, newFilename)}
         onDeleteFiles={filenames => onDeleteFiles("TestData", setFileListTestData, filenames)}
         onUploadFiles={files => onUploadFiles("TestData", fileListTestData, setFileListTestData, files)}
+        onImportArchive={onImportArchive}
       />
     </>
   );

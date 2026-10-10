@@ -20,6 +20,11 @@ return {
   selected_files_count_and_size: "选中 {count} 个文件，总大小 {totalSize}",
   selected_files_count_and_size_narrow: "选中 {count} 个文件\n总大小 {totalSize}",
   upload: "上传",
+  import_archive: "导入数据包",
+  import_archive_invalid: "请选择 .zip 压缩包。",
+  import_archive_success: "测试数据导入成功。",
+  confirm_import_archive_question: "确认导入该数据包吗？将替换全部现有测试数据。",
+  confirm_import_archive: "确认",
   confirm_override_question: "确认要覆盖以下文件吗？",
   confirm_override: "确认",
   progress_waiting: "等待上传",
@@ -39,6 +44,9 @@ return {
     TOO_MANY_FILES: "文件数量超出限制，请联系管理员协助上传。",
     TOTAL_SIZE_TOO_LARGE: "数据总大小超出限制，请联系管理员协助上传。",
     FILE_UUID_EXISTS: "未知错误。",
-    FILE_NOT_UPLOADED: "找不到已上传的文件。"
+    FILE_NOT_UPLOADED: "找不到已上传的文件。",
+    ARCHIVE_NOT_UPLOADED: "找不到已上传的压缩包。",
+    INVALID_ARCHIVE: "压缩包无法解析，或其中的文件无法映射为有效文件名。",
+    ARCHIVE_TOO_LARGE: "压缩包大小超出限制，请联系管理员协助上传。"
   }
 };

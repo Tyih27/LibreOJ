@@ -36,6 +36,10 @@ export const addProblemFile = createPostApi<ApiTypes.AddProblemFileRequestDto, A
   "problem/addProblemFile",
   true
 );
+export const importProblemTestDataArchive = createPostApi<
+  ApiTypes.ImportProblemTestDataArchiveRequestDto,
+  ApiTypes.ImportProblemTestDataArchiveResponseDto
+>("problem/importProblemTestDataArchive", false);
 export const removeProblemFiles = createPostApi<
   ApiTypes.RemoveProblemFilesRequestDto,
   ApiTypes.RemoveProblemFilesResponseDto

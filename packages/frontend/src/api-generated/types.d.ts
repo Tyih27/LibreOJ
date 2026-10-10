@@ -502,6 +502,21 @@ declare namespace ApiTypes {
     enabled: boolean;
     contents: {};
   }
+  export interface ImportProblemTestDataArchiveRequestDto {
+    problemId: number;
+    uploadInfo: ApiTypes.FileUploadInfoDto;
+  }
+  export interface ImportProblemTestDataArchiveResponseDto {
+    error?:
+      | "NO_SUCH_PROBLEM"
+      | "PERMISSION_DENIED"
+      | "ARCHIVE_NOT_UPLOADED"
+      | "INVALID_ARCHIVE"
+      | "ARCHIVE_TOO_LARGE"
+      | "TOO_MANY_FILES"
+      | "TOTAL_SIZE_TOO_LARGE";
+    signedUploadRequest?: ApiTypes.SignedFileUploadRequestDto;
+  }
   export interface JudgeClientInfoDto {
     id: number;
     name: string;

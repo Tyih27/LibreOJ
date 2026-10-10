@@ -343,7 +343,7 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **目录处理**：剥离**单一公共顶层目录**，其余嵌套路径**拍平**（`/`→`_`）；`..`/非法/空名/同名冲突 → 报错（纯规划器 `problem-data-import/archive.ts`，有单测）。
 - **覆盖语义：整体替换（B）**——校验全部通过后**清空该题全部 TestData**，再落地归档文件；**校验先于清空**，空归档/仅目录归档 → `INVALID_ARCHIVE`（不破坏数据）。
 - 限额：`resourceLimit.problemTestdataFiles`/`problemTestdataSize`（单条未解压 + 合计），特权用户 `noLimit`。**失败尽力清理**（非强事务）。
-- 仅后端；**前端上传按钮/交互待做**（后续单独实现，届时接入 `callApiWithFileUpload` + `ProblemFilesPage`）。
+- **前端已实现**：`ProblemFilesPage` 的测试数据表页脚新增「导入数据包」按钮（`FileTable` 的 `onImportArchive`）：选 `.zip` → 破坏性确认（提示将替换全部测试数据）→ `callApiWithFileUpload` → 导入成功后重新拉取 testdata 刷新列表。API 客户端经 `generate-api` 从后端 Swagger 重新生成。
 
 ### 14.2 明确不做（后置）
 - **problem-type 整体插件化**（把三种题型做成 `problemTypeRegistry` 的插件，加题型=加插件）：**暂不做**。

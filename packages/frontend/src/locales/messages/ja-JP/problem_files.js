@@ -20,6 +20,11 @@ return {
   selected_files_count_and_size: "{count} 個, {totalSize} 選択中",
   selected_files_count_and_size_narrow: "{count} 個, {totalSize} 選択中",
   upload: "アップロード",
+  import_archive: "アーカイブをインポート",
+  import_archive_invalid: ".zip アーカイブを選択してください。",
+  import_archive_success: "テストデータをインポートしました。",
+  confirm_import_archive_question: "このアーカイブをインポートしますか？既存のテストデータはすべて置き換えられます。",
+  confirm_import_archive: "インポートする",
   confirm_override_question: "以下のファイルを上書きしますか？",
   confirm_override: "上書きする",
   progress_waiting: "アップロードを待機中",
@@ -39,6 +44,9 @@ return {
     TOO_MANY_FILES: "ファイル数が制限を超えました，管理者に連絡してください。",
     TOTAL_SIZE_TOO_LARGE: "データのサイズが制限を超えました，管理者に連絡してください。",
     FILE_UUID_EXISTS: "[TBT] Unknown error.",
-    FILE_NOT_UPLOADED: "アップロードしたファイルは存在しません。"
+    FILE_NOT_UPLOADED: "アップロードしたファイルは存在しません。",
+    ARCHIVE_NOT_UPLOADED: "アップロードしたアーカイブは存在しません。",
+    INVALID_ARCHIVE: "アーカイブを読み取れないか、含まれるファイルを有効なファイル名に変換できません。",
+    ARCHIVE_TOO_LARGE: "アーカイブのサイズが制限を超えました，管理者に連絡してください。"
   }
 };
