@@ -18,6 +18,9 @@ export class ProblemMetaDto {
   isPublic: boolean;
 
   @ApiProperty()
+  hackable: boolean;
+
+  @ApiProperty()
   publicTime: Date;
 
   @ApiProperty()

@@ -21,6 +21,7 @@ import { LocalizedContentModule } from "./localized-content/localized-content.mo
 import { PermissionModule } from "./permission/permission.module";
 import { FileModule } from "./file/file.module";
 import { SubmissionModule } from "./submission/submission.module";
+import { HackModule } from "./hack/hack.module";
 import { JudgeModule } from "./judge/judge.module";
 import { DiscussionModule } from "./discussion/discussion.module";
 import { MigrationModule } from "./migration/migration.module";
@@ -44,6 +45,7 @@ import { MetricsModule } from "./metrics/metrics.module";
     forwardRef(() => PermissionModule),
     forwardRef(() => FileModule),
     forwardRef(() => SubmissionModule),
+    forwardRef(() => HackModule),
     forwardRef(() => JudgeModule),
     forwardRef(() => DiscussionModule),
     forwardRef(() => EventReportModule),

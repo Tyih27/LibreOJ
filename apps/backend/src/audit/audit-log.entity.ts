@@ -8,6 +8,7 @@ export enum AuditLogObjectType {
   Problem = "Problem",
   ProblemTag = "ProblemTag",
   Submission = "Submission",
+  Hack = "Hack",
   Discussion = "Discussion",
   DiscussionReply = "DiscussionReply"
 }

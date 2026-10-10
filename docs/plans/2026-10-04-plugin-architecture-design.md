@@ -417,6 +417,10 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **前置/依赖**：题目需 `hackable` 且数据含 **`std.cpp`** + **`val.cpp`**（实测 pid=1 有，其余没有）。
 - **范围**：`hacks` 表 + `problem.hackable`；backend hack 流程/权限/可见性/审计；judge **hack 判题任务**（编译 std+val、校验输入、跑 std、判目标提交）；
   前端 hack 提交/列表/详情页。**实施前先派子 Agent 侦察 UOJ hack 判题流程/DB/权限，再出详细方案。**
+  **U4-a 进度**：① 协议+backend **已完成**（`judge-protocol` 加 `JudgeTaskType.Hack` + `HackTaskExtraInfo`；backend 新增 `hack` 模块：
+  `HackEntity`、`problem.hackable`（管理员端点 `problem/setProblemHackable`）、`HackService` 注册 hack 任务入 `judge-queue`、`hack/createHack|queryHacks|getHack`、
+  权限=管理员或有该题 AC；输入复用 presigned 上传）；② judge `task/hack` **待做**（当前 `task/index.ts` 对 `Hack` 是抛错占位）。
+  语义：`hack.success=1` ⟺ 被 hack 提交在 hack 输入上判错（hack 成功）。**无法本机端到端验证**（编译 std/val 需编译器 rootfs）。
 
 ### 15.6 明确不做 / 后置（本轮）
 - **第二套 judge**（UOJ 原版 judge / 协议级双 judge）：**不做**（用户已改选"补字段+解析"路线）。

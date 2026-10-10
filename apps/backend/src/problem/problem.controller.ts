@@ -30,6 +30,9 @@ import {
   SetProblemPublicRequestDto,
   SetProblemPublicResponseDto,
   SetProblemPublicResponseError,
+  SetProblemHackableRequestDto,
+  SetProblemHackableResponseDto,
+  SetProblemHackableResponseError,
   QueryProblemSetRequestDto,
   QueryProblemSetResponseDto,
   QueryProblemSetResponseError,
@@ -675,6 +678,38 @@ export class ProblemController {
       AuditLogObjectType.Problem,
       problem.id
     );
+
+    return {};
+  }
+
+  @Post("setProblemHackable")
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Set if a problem is hackable."
+  })
+  async setProblemHackable(
+    @CurrentUser() currentUser: UserEntity,
+    @Body() request: SetProblemHackableRequestDto
+  ): Promise<SetProblemHackableResponseDto> {
+    const problem = await this.problemService.findProblemById(request.problemId);
+
+    if (!problem)
+      return {
+        error: SetProblemHackableResponseError.NO_SUCH_PROBLEM
+      };
+
+    if (!(await this.problemService.userHasPermission(currentUser, problem, ProblemPermissionType.Modify)))
+      return {
+        error: SetProblemHackableResponseError.PERMISSION_DENIED
+      };
+
+    if (problem.hackable === request.hackable) return {};
+
+    await this.problemService.setProblemHackable(problem, request.hackable);
+
+    await this.auditService.log("problem.set_hackable", AuditLogObjectType.Problem, problem.id, {
+      hackable: request.hackable
+    });
 
     return {};
   }

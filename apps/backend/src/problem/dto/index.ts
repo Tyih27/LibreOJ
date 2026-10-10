@@ -27,6 +27,9 @@ export * from "./set-problem-display-id-response.dto";
 export * from "./set-problem-public-request.dto";
 export * from "./set-problem-public-response.dto";
 
+export * from "./set-problem-hackable-request.dto";
+export * from "./set-problem-hackable-response.dto";
+
 export * from "./add-problem-file-request.dto";
 export * from "./add-problem-file-response.dto";
 

@@ -37,6 +37,9 @@ export class ProblemEntity {
   @Column({ type: "boolean" })
   isPublic: boolean;
 
+  @Column({ type: "boolean", default: false })
+  hackable: boolean;
+
   @Column({ type: "datetime", nullable: true })
   publicTime: Date;
 

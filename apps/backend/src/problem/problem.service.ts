@@ -151,6 +151,7 @@ export class ProblemService {
       type: problem.type,
       publicTime: problem.publicTime,
       isPublic: problem.isPublic,
+      hackable: problem.hackable,
       ownerId: problem.ownerId,
       locales: problem.locales
     };
@@ -702,6 +703,11 @@ export class ProblemService {
     if (isPublic) problem.publicTime = new Date();
     await this.problemRepository.save(problem);
     await this.submissionService.setSubmissionsPublic(problem.id, isPublic);
+  }
+
+  async setProblemHackable(problem: ProblemEntity, hackable: boolean): Promise<void> {
+    problem.hackable = hackable;
+    await this.problemRepository.save(problem);
   }
 
   private async checkAddProblemFileLimit(
