@@ -30,6 +30,9 @@ export * from "./set-problem-public-response.dto";
 export * from "./add-problem-file-request.dto";
 export * from "./add-problem-file-response.dto";
 
+export * from "./import-problem-test-data-archive-request.dto";
+export * from "./import-problem-test-data-archive-response.dto";
+
 export * from "./remove-problem-files-request.dto";
 export * from "./remove-problem-files-response.dto";
 

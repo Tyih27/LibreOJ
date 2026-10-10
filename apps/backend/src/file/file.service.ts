@@ -310,6 +310,16 @@ export class FileService implements OnModuleInit {
   }
 
   /**
+   * Opens an object as a readable stream.
+   *
+   * Files are normally served through signed links and never read by the backend. The problem data importers are the
+   * exception: they download an uploaded archive to a temporary file (see `problem-data-import`).
+   */
+  async getFileStream(uuid: string): Promise<Readable> {
+    return await this.minioClient.getObject(this.bucket, uuid);
+  }
+
+  /**
    * Reads an object's content as a UTF-8 string.
    *
    * Files are normally served through signed links and never read by the backend. The problem data importers are the
@@ -317,7 +327,7 @@ export class FileService implements OnModuleInit {
    * object storage (see `problem-data-import`).
    */
   async getFileContent(uuid: string): Promise<string> {
-    const stream = await this.minioClient.getObject(this.bucket, uuid);
+    const stream = await this.getFileStream(uuid);
     const chunks: Buffer[] = [];
     for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
     return Buffer.concat(chunks).toString("utf8");

@@ -338,6 +338,13 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - `@libreoj/backend-*` 注册：`@codeforces-polygon`（`priority: 50`、`authoritative: false`，仅 `traditional`）排在 `uoj-data-config`(100) 与 `libreoj-native`(-1000) 之间。
 - 子目录类布局（DOMjudge/Polygon `tests/` 目录等）**不做**：测试数据文件名不能含 `/`。
 
+#### D4（已实现）：归档导入（zip → testdata，整体替换）
+- 后端端点 `POST /api/problem/importProblemTestDataArchive`：**复用 presigned 上传**（`uploadInfo.uuid` 为空拿签名 → 上传 zip → 再回调带 uuid）。
+- **目录处理**：剥离**单一公共顶层目录**，其余嵌套路径**拍平**（`/`→`_`）；`..`/非法/空名/同名冲突 → 报错（纯规划器 `problem-data-import/archive.ts`，有单测）。
+- **覆盖语义：整体替换（B）**——校验全部通过后**清空该题全部 TestData**，再落地归档文件；**校验先于清空**，空归档/仅目录归档 → `INVALID_ARCHIVE`（不破坏数据）。
+- 限额：`resourceLimit.problemTestdataFiles`/`problemTestdataSize`（单条未解压 + 合计），特权用户 `noLimit`。**失败尽力清理**（非强事务）。
+- 仅后端；**前端上传按钮/交互待做**（后续单独实现，届时接入 `callApiWithFileUpload` + `ProblemFilesPage`）。
+
 ### 14.2 明确不做（后置）
 - **problem-type 整体插件化**（把三种题型做成 `problemTypeRegistry` 的插件，加题型=加插件）：**暂不做**。
   原因：`ProblemTypeServiceInterface` 依赖 backend 实体（`ProblemFileEntity`/`FileEntity`）与领域接口

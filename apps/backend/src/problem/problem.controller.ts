@@ -36,6 +36,9 @@ import {
   AddProblemFileRequestDto,
   AddProblemFileResponseDto,
   AddProblemFileResponseError,
+  ImportProblemTestDataArchiveRequestDto,
+  ImportProblemTestDataArchiveResponseDto,
+  ImportProblemTestDataArchiveResponseError,
   RemoveProblemFilesRequestDto,
   RemoveProblemFilesResponseDto,
   RemoveProblemFilesResponseError,
@@ -722,6 +725,55 @@ export class ProblemController {
       type: request.type,
       uploadInfo: request.uploadInfo,
       filename: request.filename
+    });
+
+    return {};
+  }
+
+  @Post("importProblemTestDataArchive")
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Import a problem's testdata from an uploaded zip archive, replacing all existing testdata.",
+    description:
+      "Call with an empty uploadInfo.uuid to obtain a signed upload request, upload the zip archive, then call " +
+      "again with the returned UUID. The archive's files are flattened into testdata filenames and all of the " +
+      "problem's existing testdata is replaced."
+  })
+  async importProblemTestDataArchive(
+    @CurrentUser() currentUser: UserEntity,
+    @Body() request: ImportProblemTestDataArchiveRequestDto
+  ): Promise<ImportProblemTestDataArchiveResponseDto> {
+    const problem = await this.problemService.findProblemById(request.problemId);
+    if (!problem)
+      return {
+        error: ImportProblemTestDataArchiveResponseError.NO_SUCH_PROBLEM
+      };
+
+    const hasPrivilege = await this.userPrivilegeService.userHasPrivilege(currentUser, UserPrivilegeType.ManageProblem);
+
+    if (
+      !(await this.problemService.userHasPermission(currentUser, problem, ProblemPermissionType.Modify, hasPrivilege))
+    )
+      return {
+        error: ImportProblemTestDataArchiveResponseError.PERMISSION_DENIED
+      };
+
+    const result = await this.problemService.importProblemTestDataFromArchive(
+      problem,
+      request.uploadInfo,
+      hasPrivilege
+    );
+    if (typeof result === "string")
+      return {
+        error: result as ImportProblemTestDataArchiveResponseError
+      };
+    if (result)
+      return {
+        signedUploadRequest: result
+      };
+
+    await this.auditService.log("problem.import_testdata_archive", AuditLogObjectType.Problem, problem.id, {
+      uploadInfo: request.uploadInfo
     });
 
     return {};

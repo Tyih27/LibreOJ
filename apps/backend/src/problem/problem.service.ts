@@ -1,7 +1,15 @@
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { pipeline } from "stream/promises";
+
 import { Injectable, forwardRef, Inject } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
 
 import { DataSource, Repository, EntityManager, Brackets, In, FindOptionsWhere } from "typeorm";
+import { v4 as UUID } from "uuid";
+import unzipper from "unzipper";
+import type { File as UnzipperFile } from "unzipper";
 
 import { ProblemJudgeInfo } from "./problem-judge-info.interface";
 import { ProblemSampleData } from "./problem-sample-data.interface";
@@ -34,6 +42,7 @@ import { GroupService } from "../group/group.service";
 import { FileService } from "../file/file.service";
 import { logger } from "../logger";
 import { PROBLEM_DATA_CONFIG_FILENAMES } from "../problem-data-import/uoj-config";
+import { planArchiveEntries, PlannedArchiveFile } from "../problem-data-import/archive";
 import { getProblemDataImporters } from "../plugin/services";
 import { ConfigService } from "../config/config.service";
 import { RedisService } from "../redis/redis.service";
@@ -844,6 +853,170 @@ export class ProblemService {
       if (type === ProblemFileType.TestData)
         await this.redisService.cacheDelete(REDIS_KEY_PROBLEM_PREPROCESSED_JUDGE_INFO.format(problem.id));
     });
+  }
+
+  /**
+   * Import a problem's testdata from an uploaded zip archive, replacing all existing testdata.
+   *
+   * The client first calls this with a null `uploadInfo.uuid` to obtain a signed upload request; after uploading the
+   * archive it calls again with the returned UUID. The archive is downloaded to a temporary file and inspected before
+   * the current testdata is touched: filename planning and limits are validated first, so a rejected archive leaves
+   * the problem's testdata unchanged. Once validation passes the existing testdata is removed and the archive's files
+   * are stored in its place. This is not a strict transaction: if storing a file fails midway, the files already
+   * created are cleaned up best-effort and the error is propagated.
+   *
+   * @error "NO_SUCH_PROBLEM"
+   * @error "ARCHIVE_NOT_UPLOADED" | "INVALID_ARCHIVE" | "ARCHIVE_TOO_LARGE" | "TOO_MANY_FILES" | "TOTAL_SIZE_TOO_LARGE"
+   */
+  async importProblemTestDataFromArchive(
+    problem: ProblemEntity,
+    uploadInfo: FileUploadInfoDto,
+    noLimit: boolean
+  ): Promise<
+    | SignedFileUploadRequestDto
+    | "NO_SUCH_PROBLEM"
+    | "ARCHIVE_NOT_UPLOADED"
+    | "INVALID_ARCHIVE"
+    | "ARCHIVE_TOO_LARGE"
+    | "TOO_MANY_FILES"
+    | "TOTAL_SIZE_TOO_LARGE"
+  > {
+    // eslint-disable-next-line @typescript-eslint/no-shadow
+    return await this.lockManageProblemFile(problem.id, ProblemFileType.TestData, async problem => {
+      if (!problem) return "NO_SUCH_PROBLEM";
+
+      const [filesLimit, sizeLimit] = noLimit
+        ? [Infinity, Infinity]
+        : [
+            this.configService.config.resourceLimit.problemTestdataFiles,
+            this.configService.config.resourceLimit.problemTestdataSize
+          ];
+
+      if (!uploadInfo.uuid) {
+        if (uploadInfo.size > sizeLimit) return "ARCHIVE_TOO_LARGE";
+
+        const result = await this.fileService.processUploadRequest(uploadInfo, () => null, this.connection.manager);
+        // `uploadInfo.uuid` is null, so `processUploadRequest` returns a signed upload request.
+        return result as SignedFileUploadRequestDto;
+      }
+
+      const { uuid } = uploadInfo;
+      if (!(await this.fileService.fileExistsInMinio(uuid))) return "ARCHIVE_NOT_UPLOADED";
+
+      const tempDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "libreoj-testdata-archive-"));
+      try {
+        const tempPath = path.join(tempDirectory, "archive.zip");
+        await pipeline(await this.fileService.getFileStream(uuid), fs.createWriteStream(tempPath));
+
+        let planned: PlannedArchiveFile[];
+        let archiveFiles: UnzipperFile[];
+        try {
+          const directory = await unzipper.Open.file(tempPath);
+          archiveFiles = directory.files.filter(file => file.type !== "Directory" && !file.path.endsWith("/"));
+          planned = planArchiveEntries(archiveFiles.map(file => ({ path: file.path, size: file.uncompressedSize })));
+        } catch (e) {
+          logger.warn(`Failed to read testdata archive ${uuid} of problem ${problem.id}: ${e}`);
+          return "INVALID_ARCHIVE";
+        }
+
+        if (planned.length > filesLimit) return "TOO_MANY_FILES";
+
+        // An empty archive (or one with only directory entries) would otherwise wipe the testdata and import nothing.
+        if (planned.length === 0) return "INVALID_ARCHIVE";
+
+        let totalSize = 0;
+        for (const file of archiveFiles) {
+          totalSize += file.uncompressedSize;
+          if (file.uncompressedSize > sizeLimit) return "TOTAL_SIZE_TOO_LARGE";
+        }
+        if (totalSize > sizeLimit) return "TOTAL_SIZE_TOO_LARGE";
+
+        // Every check passed; now the archive replaces the problem's testdata.
+        const createdFileUuids: string[] = [];
+        try {
+          await this.clearProblemTestData(problem);
+
+          /* eslint-disable no-await-in-loop */
+          for (let i = 0; i < planned.length; i++) {
+            const content = await archiveFiles[i].buffer();
+            const fileUuid = UUID();
+            await this.fileService.uploadFile(fileUuid, content);
+            createdFileUuids.push(fileUuid);
+
+            await this.connection.transaction("READ COMMITTED", async transactionalEntityManager => {
+              const fileEntity = new FileEntity();
+              fileEntity.uuid = fileUuid;
+              fileEntity.size = content.length;
+              fileEntity.uploadTime = new Date();
+              await transactionalEntityManager.save(FileEntity, fileEntity);
+
+              const problemFile = new ProblemFileEntity();
+              problemFile.problemId = problem.id;
+              problemFile.type = ProblemFileType.TestData;
+              problemFile.filename = planned[i].name;
+              problemFile.uuid = fileUuid;
+              await transactionalEntityManager.save(ProblemFileEntity, problemFile);
+            });
+          }
+          /* eslint-enable no-await-in-loop */
+        } catch (e) {
+          logger.error(`Failed to import testdata archive of problem ${problem.id}, rolling back: ${e}`);
+          await this.removeUploadedTestDataFiles(problem, createdFileUuids);
+          throw e;
+        }
+
+        await this.redisService.cacheDelete(REDIS_KEY_PROBLEM_PREPROCESSED_JUDGE_INFO.format(problem.id));
+        return null;
+      } finally {
+        await fs.promises.rm(tempDirectory, { recursive: true, force: true });
+        // The archive is a transient upload; it is no longer needed in object storage.
+        this.fileService.deleteUnfinishedUploadedFile(uuid);
+      }
+    });
+  }
+
+  /** Removes all of a problem's existing testdata, deleting the underlying objects best-effort. */
+  private async clearProblemTestData(problem: ProblemEntity): Promise<void> {
+    let deleteFilesActually: () => void = null;
+    await this.connection.transaction("READ COMMITTED", async transactionalEntityManager => {
+      const problemFiles = await transactionalEntityManager.findBy(ProblemFileEntity, {
+        problemId: problem.id,
+        type: ProblemFileType.TestData
+      });
+
+      await transactionalEntityManager.delete(ProblemFileEntity, {
+        problemId: problem.id,
+        type: ProblemFileType.TestData
+      });
+
+      deleteFilesActually = await this.fileService.deleteFile(
+        problemFiles.map(problemFile => problemFile.uuid),
+        transactionalEntityManager
+      );
+    });
+
+    if (deleteFilesActually) deleteFilesActually();
+  }
+
+  /** Deletes partially imported testdata files and their rows after a failed import, best-effort. */
+  private async removeUploadedTestDataFiles(problem: ProblemEntity, uuids: string[]): Promise<void> {
+    if (uuids.length === 0) return;
+
+    let deleteFilesActually: () => void = null;
+    try {
+      await this.connection.transaction("READ COMMITTED", async transactionalEntityManager => {
+        await transactionalEntityManager.delete(ProblemFileEntity, {
+          problemId: problem.id,
+          type: ProblemFileType.TestData,
+          uuid: In(uuids)
+        });
+        deleteFilesActually = await this.fileService.deleteFile(uuids, transactionalEntityManager);
+      });
+    } catch (e) {
+      logger.error(`Failed to clean up partially imported testdata of problem ${problem.id}: ${e}`);
+    }
+
+    if (deleteFilesActually) deleteFilesActually();
   }
 
   async getProblemFiles(
