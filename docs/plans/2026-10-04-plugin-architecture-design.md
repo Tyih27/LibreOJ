@@ -392,9 +392,9 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **19 个 UOJ 内建 checker（全部搬入，用户要求）**，均为 testlib 实现：
   `acmp bcmp caseicmp casencmp casewcmp dcmp fcmp hcmp icmp lcmp ncmp rcmp rcmp4 rcmp6 rcmp9 rncmp uncmp wcmp yesno`
   （语义见 UOJ `builtin/checker/*.cpp` 的 `setName`）。注意 **`ncmp` 与 LOJ `integers` 算法逐字相同**，`rcmp4/6/9`=浮点容差 1e-5/7/10 等。
-- **表示法待定**：LOJ `Checker` 是**判别联合**且在 backend/judge/frontend/wire 各处镜像；19 个 checker 采用
-  **A**：每个一个新 `type`（准确但四处都改）／**B**：一个通用 `{type:"testlib", name, params?}` 按名 dispatch（改动小、易扩）／**C**：复用 custom 接口。
-  （**倾向 B**，待实现前确认。）
+- **表示法（已定 B）**：LOJ `Checker` 是**判别联合**且在 backend/judge/frontend/wire 各处镜像；19 个 checker 采用
+  **B**：新增**一个**通用变体 `{ type: "testlib", name: <19 名之一> }`，由 judge/原生层**按名 dispatch**（改动小、易扩）。
+  现有 4 个（`integers/floats/lines/binary`）保留不变。
 
 ### 15.4 U3 — 额外测试与样例（`n_ex_tests` / `n_sample_tests`）
 - **目标**：建模 UOJ 的额外测试与样例：`ex_input1..M`（+ `ex_output1..M`），`M=n_ex_tests`；
@@ -414,5 +414,6 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **子目录类布局 / AdditionalFile 归档导入**：沿用 §14 的结论（文件名不能含 `/`；归档导入仅 TestData）。
 
 ### 15.7 决策登记
-- **已定**：走"补字段 + UOJ importer + 移植 checker"（不做双 judge）；**19 个 checker 全部搬入**；`output_limit` 与 U2 一起做；**要做 hack**。
-- **待定**：U2 的 checker **表示法（A/B/C）**；`use_builtin_judger off` 是否支持；U3 额外测试/样例的具体语义。
+- **已定**：走"补字段 + UOJ importer + 移植 checker"（不做双 judge）；**19 个 checker 全部搬入**；`output_limit` 与 U2 一起做；**要做 hack**；**checker 表示法选 B**（`{type:"testlib", name}`）。
+- **待定**：`use_builtin_judger off` 是否支持；U3 额外测试/样例的具体语义。
+- **实施顺序**：U2 的 checker 契约（变体 B）是 U1 importer 的前置（importer 要产出 `{type:"testlib",name}`），故**先落 U2 的 checker 契约+19 个实现**，再做 U1 importer。

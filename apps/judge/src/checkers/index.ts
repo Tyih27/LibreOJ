@@ -25,6 +25,12 @@ export interface CheckerTypeBinary {
   type: "binary";
 }
 
+// testlib:  run one of the built-in testlib checkers ported from UOJ, selected by [name]
+export interface CheckerTypeTestlib {
+  type: "testlib";
+  name: string;
+}
+
 // custom:   use a custom program to check the user's output
 export interface CheckerTypeCustom {
   type: "custom";
@@ -41,6 +47,7 @@ export type Checker =
   | CheckerTypeFloats
   | CheckerTypeLines
   | CheckerTypeBinary
+  | CheckerTypeTestlib
   | CheckerTypeCustom;
 
 export interface CheckerResult {

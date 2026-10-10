@@ -98,6 +98,7 @@ return {
       floats: "[TBT] Floats",
       lines: "[TBT] Lines",
       binary: "[TBT] Binary",
+      testlib: "[TBT] Testlib",
       custom: "[TBT] Custom"
     },
     config: {
@@ -110,6 +111,10 @@ return {
         case_sensitive: "[TBT] Case Sensitive",
         description:
           "[TBT] The blank characters in the end of each line and empty lines in the end of file are ignored."
+      },
+      testlib: {
+        name: "[TBT] Checker",
+        description: "[TBT] Run one of the built-in Testlib checkers ported from UOJ."
       },
       custom: {
         interface: "[TBT] Interface",

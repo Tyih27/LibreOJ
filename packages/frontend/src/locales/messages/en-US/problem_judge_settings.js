@@ -94,6 +94,7 @@ return {
       floats: "Floats",
       lines: "Lines",
       binary: "Binary",
+      testlib: "Testlib",
       custom: "Custom"
     },
     config: {
@@ -105,6 +106,10 @@ return {
       lines: {
         case_sensitive: "Case Sensitive",
         description: "The blank characters in the end of each line and empty lines in the end of file are ignored."
+      },
+      testlib: {
+        name: "Checker",
+        description: "Run one of the built-in Testlib checkers ported from UOJ."
       },
       custom: {
         interface: "Interface",

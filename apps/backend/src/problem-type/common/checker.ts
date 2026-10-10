@@ -23,6 +23,35 @@ interface CheckerTypeBinary {
   type: "binary";
 }
 
+// The names of the built-in testlib checkers ported from UOJ. Each name is dispatched by the native layer to the
+// matching algorithm (see apps/judge/native/builtin_checkers).
+export const TESTLIB_CHECKER_NAMES: string[] = [
+  "acmp",
+  "bcmp",
+  "caseicmp",
+  "casencmp",
+  "casewcmp",
+  "dcmp",
+  "fcmp",
+  "hcmp",
+  "icmp",
+  "lcmp",
+  "ncmp",
+  "rcmp",
+  "rcmp4",
+  "rcmp6",
+  "rcmp9",
+  "rncmp",
+  "uncmp",
+  "wcmp",
+  "yesno"
+];
+
+interface CheckerTypeTestlib {
+  type: "testlib";
+  name: string;
+}
+
 interface CheckerTypeCustom {
   type: "custom";
   interface: string;
@@ -40,12 +69,14 @@ interface CheckerTypeCustom {
 //           any space characters (space, \t, \r) in the end of a line will be ignored
 //           any empty lines in the end of file will be ignored
 // binary:   check if the user's output and answer files are equal in binary
+// testlib:  run one of the built-in testlib checkers ported from UOJ, selected by [testlib.name]
 // custom:   use a custom program to check the user's output
 export type Checker =
   | CheckerTypeIntegers
   | CheckerTypeFloats
   | CheckerTypeLines
   | CheckerTypeBinary
+  | CheckerTypeTestlib
   | CheckerTypeCustom;
 
 interface JudgeInfoWithChecker {
@@ -86,6 +117,11 @@ export function validateChecker(
       break;
     case "binary":
       restrictProperties(judgeInfo.checker, ["type"]);
+      break;
+    case "testlib":
+      if (!TESTLIB_CHECKER_NAMES.includes(judgeInfo.checker.name)) throw ["INVALID_CHECKER_OPTIONS"];
+
+      restrictProperties(judgeInfo.checker, ["type", "name"]);
       break;
     case "custom": {
       const { checker } = judgeInfo;

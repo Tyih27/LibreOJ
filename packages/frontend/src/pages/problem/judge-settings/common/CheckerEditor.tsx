@@ -35,6 +35,11 @@ interface CheckerTypeBinary {
   type: "binary";
 }
 
+interface CheckerTypeTestlib {
+  type: "testlib";
+  name: string;
+}
+
 interface CheckerTypeCustom {
   type: "custom";
   interface: string;
@@ -45,11 +50,41 @@ interface CheckerTypeCustom {
   memoryLimit?: number;
 }
 
-type CheckerConfig = CheckerTypeIntegers | CheckerTypeFloats | CheckerTypeLines | CheckerTypeBinary | CheckerTypeCustom;
+type CheckerConfig =
+  | CheckerTypeIntegers
+  | CheckerTypeFloats
+  | CheckerTypeLines
+  | CheckerTypeBinary
+  | CheckerTypeTestlib
+  | CheckerTypeCustom;
 type CheckerType = CheckerConfig["type"];
 
-const CHECKER_TYPES: CheckerType[] = ["integers", "floats", "lines", "binary", "custom"];
+const CHECKER_TYPES: CheckerType[] = ["integers", "floats", "lines", "binary", "testlib", "custom"];
 const CUSTOM_CHECKER_INTERFACES = ["testlib", "legacy", "lemon", "hustoj", "qduoj", "domjudge"];
+
+// Names of the built-in testlib checkers ported from UOJ. Kept in sync with `TESTLIB_CHECKER_NAMES` in the backend
+// (`apps/backend/src/problem-type/common/checker.ts`).
+const TESTLIB_CHECKER_NAMES = [
+  "acmp",
+  "bcmp",
+  "caseicmp",
+  "casencmp",
+  "casewcmp",
+  "dcmp",
+  "fcmp",
+  "hcmp",
+  "icmp",
+  "lcmp",
+  "ncmp",
+  "rcmp",
+  "rcmp4",
+  "rcmp6",
+  "rcmp9",
+  "rncmp",
+  "uncmp",
+  "wcmp",
+  "yesno"
+];
 
 function parseCheckerConfig(checker: Partial<CheckerConfig>, testData: ApiTypes.ProblemFileDto[]): CheckerConfig {
   if (!checker || !CHECKER_TYPES.includes(checker.type))
@@ -71,6 +106,14 @@ function parseCheckerConfig(checker: Partial<CheckerConfig>, testData: ApiTypes.
       return { type: "lines", caseSensitive: !!checker.caseSensitive };
     case "binary":
       return { type: "binary" };
+    case "testlib":
+      return {
+        type: "testlib",
+        name:
+          typeof checker.name === "string" && TESTLIB_CHECKER_NAMES.includes(checker.name)
+            ? checker.name
+            : TESTLIB_CHECKER_NAMES[0]
+      };
     case "custom":
       const language = Object.values(CodeLanguage).includes(checker.language)
         ? checker.language
@@ -177,6 +220,24 @@ let CheckerEditor: React.FC<CheckerEditorProps> = props => {
               );
             case "binary":
               return null;
+            case "testlib":
+              return (
+                <>
+                  <Form.Field width={8}>
+                    <label>{_(`.checker.config.testlib.name`)}</label>
+                    <Form.Select
+                      value={checker.name}
+                      options={TESTLIB_CHECKER_NAMES.map(name => ({
+                        key: name,
+                        value: name,
+                        text: name
+                      }))}
+                      onChange={(e, { value }) => onUpdateChecker({ name: value as string })}
+                    />
+                  </Form.Field>
+                  <div className={style.description}>{_(".checker.config.testlib.description")}</div>
+                </>
+              );
             case "custom":
               return (
                 <div className={style.custom}>

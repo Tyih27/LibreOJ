@@ -92,6 +92,7 @@ return {
       floats: "浮点数",
       lines: "行比较",
       binary: "二进制比较",
+      testlib: "Testlib",
       custom: "自定义"
     },
     config: {
@@ -102,6 +103,10 @@ return {
       lines: {
         case_sensitive: "区分大小写",
         description: "行末的空白字符与文末的空白行将被忽略。"
+      },
+      testlib: {
+        name: "检查器",
+        description: "使用一个从 UOJ 移植的内置 Testlib 检查器。"
       },
       custom: {
         interface: "接口",
