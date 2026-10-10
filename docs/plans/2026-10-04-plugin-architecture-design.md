@@ -351,3 +351,68 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   （`ProblemJudgeInfo`/`SubmissionContent`/`SubmissionProgress`），且被 `problem`/`submission`/`migration` 广泛消费，
   属中等偏大改造；`problemType` 存库、前端认这几型，插件化后须保证内置三型默认启用。将来若需要再单独立项。
 - **judge 侧 `subtaskScoring` 独立 seam**：**不做**。子任务评分/聚集保持随题型与导入器。
+
+## 15. 上游 UOJ（problem.conf）判题与数据兼容（U1–U4）
+
+### 15.0 背景与总决策
+- **本机存在真实上游 UOJ 实例**：`~/HHHOJ`（基于 Universal Online Judge 的迁移版）。题目数据在
+  `uoj_data/web/data/{pid}/problem.conf` + 数据文件（`input*`/`output*`、`ex_input*`、`std.cpp`/`val.cpp`）；
+  judge 源码在 `judger/uoj_judger/`（C++；`main_judger` + `run_program` 沙箱，**ptrace + rlimit，不依赖 cgroup**）。
+- **命名澄清**：LibreOJ 现有的 `uoj-config` importer 读的是**旧 LibreOJ 血统的 `data.yml`**
+  （`subtasks[{score,type,cases}]` + `inputFile/outputFile` 的 `#` 模板），**不是**上游 UOJ 的 `problem.conf`。两者格式不同。
+- **总决策（用户已拍板）**：**不引入第二套 judge**（不做协议级双 judge）。改为：
+  1. **完善 LOJ 的 judgeInfo 字段**（补 UOJ 有、LOJ 无的项）；
+  2. **新增 UOJ `problem.conf` 解析 importer 插件**（数据格式靠 importer registry **自动识别**）；
+  3. **移植 UOJ 内建 checker**。
+  判题仍走 LOJ 引擎；因为是"数据 → 现有 judgeInfo"，所以**题目无需存"判题后端"字段**，autodetect 即可。
+
+### 15.1 `problem.conf` schema（本机 8 题实测）
+逐行 `key value…`，出现的键：`n_tests`、`n_ex_tests`、`n_sample_tests`、`input_pre`、`input_suf`、
+`output_pre`、`output_suf`、`time_limit`、`memory_limit`、`output_limit`、`use_builtin_judger`、
+`use_builtin_checker`、`n_subtasks`、`subtask_end_i`、`subtask_score_i`。
+- **文件名模板（逐字对齐 UOJ `uoj-judger-lib.php`）**：
+  `input = ${input_pre|input}${num}.${input_suf|txt}`；`output = ${output_pre|output}${num}.${output_suf|txt}`；
+  额外测试加前缀 `ex_`。
+- **单位**：`time_limit` 为**秒**（UOJ judger `floor(sec*1000+0.5)` 转 ms）；LOJ `timeLimit` 是 **ms** → ×1000 四舍五入。
+  `memory_limit`/`output_limit` 为 MB。
+
+### 15.2 U1 — UOJ `problem.conf` importer（数据层，先做）
+- **目标**：识别 `problem.conf`，映射为 LOJ judgeInfo（子任务、时间/内存、checker 名），纯加法、零核心改动。
+- **归属**：backend，新增 `apps/backend/src/problem-data-import/uoj-problem-conf.ts`；`priority 200`（高于 `uoj-config` 100）、
+  `authoritative: true`；`detect` = 有 `problem.conf`；`contentFilenames` = `["problem.conf"]`。
+- **映射**：`n_tests`+模板 → `testcases`；`n_subtasks`+`subtask_end_i`+`subtask_score_i` → `subtasks`
+  （`scoringType:"Sum"`、`points=score`；**无子任务 → 单个 Sum(100)**）；`time_limit`→`timeLimit`(ms)；
+  `memory_limit`→`memoryLimit`；`use_builtin_checker`→`checker`（依赖 U2）；`output_limit`→`outputLimit`（U2 新字段）。
+- **校验**：被引用文件必须存在；`problem.conf`、`ex_*` 不进入 testcases；`subtask_end_i` 递增且 ≤ `n_tests`；score 合计 ≤100。
+- **验证**：纯函数单测 + 真机导入 `~/HHHOJ/uoj_data/web/data/*`。
+
+### 15.3 U2 — 判题补齐（`outputLimit` + 19 个 UOJ checker）
+- **目标**：让 LOJ 判题语义覆盖 UOJ。
+- **`outputLimit`**：judgeInfo 新增每题输出上限（UOJ `output_limit`，MB），并在 judge 侧生效（LOJ 现仅有全局 `judge.limit.outputSize`）。
+- **19 个 UOJ 内建 checker（全部搬入，用户要求）**，均为 testlib 实现：
+  `acmp bcmp caseicmp casencmp casewcmp dcmp fcmp hcmp icmp lcmp ncmp rcmp rcmp4 rcmp6 rcmp9 rncmp uncmp wcmp yesno`
+  （语义见 UOJ `builtin/checker/*.cpp` 的 `setName`）。注意 **`ncmp` 与 LOJ `integers` 算法逐字相同**，`rcmp4/6/9`=浮点容差 1e-5/7/10 等。
+- **表示法待定**：LOJ `Checker` 是**判别联合**且在 backend/judge/frontend/wire 各处镜像；19 个 checker 采用
+  **A**：每个一个新 `type`（准确但四处都改）／**B**：一个通用 `{type:"testlib", name, params?}` 按名 dispatch（改动小、易扩）／**C**：复用 custom 接口。
+  （**倾向 B**，待实现前确认。）
+
+### 15.4 U3 — 额外测试与样例（`n_ex_tests` / `n_sample_tests`）
+- **目标**：建模 UOJ 的额外测试与样例：`ex_input1..M`（+ `ex_output1..M`），`M=n_ex_tests`；
+  **前 `n_sample_tests` 个即样例**（约束 `n_sample_tests ≤ n_ex_tests`）。
+- U1 仅**识别/校验**这些文件存在；**语义（是否参与评分/校验、样例如何展示）留 U3** 单独定。
+
+### 15.5 U4 — Hack（大功能，单独立项）
+- **目标**：实现 UOJ 的 Hack（用户提交测试，检验目标提交/标准解）。
+- **前置/依赖**：题目需 `hackable` 且数据含 **`std.cpp`** + **`val.cpp`**（实测 pid=1 有，其余没有）。
+- **范围**：`hacks` 表 + `problem.hackable`；backend hack 流程/权限/可见性/审计；judge **hack 判题任务**（编译 std+val、校验输入、跑 std、判目标提交）；
+  前端 hack 提交/列表/详情页。**实施前先派子 Agent 侦察 UOJ hack 判题流程/DB/权限，再出详细方案。**
+
+### 15.6 明确不做 / 后置（本轮）
+- **第二套 judge**（UOJ 原版 judge / 协议级双 judge）：**不做**（用户已改选"补字段+解析"路线）。
+- `use_builtin_judger off`（自定义 judger 程序）：U1 不支持（本机 8 题均为 `on`），需要时再立项。
+- UOJ 交互题（`interaction_mode` + `interactor.cpp`）：本机数据无，暂不做。
+- **子目录类布局 / AdditionalFile 归档导入**：沿用 §14 的结论（文件名不能含 `/`；归档导入仅 TestData）。
+
+### 15.7 决策登记
+- **已定**：走"补字段 + UOJ importer + 移植 checker"（不做双 judge）；**19 个 checker 全部搬入**；`output_limit` 与 U2 一起做；**要做 hack**。
+- **待定**：U2 的 checker **表示法（A/B/C）**；`use_builtin_judger off` 是否支持；U3 额外测试/样例的具体语义。
