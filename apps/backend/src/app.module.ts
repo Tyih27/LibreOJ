@@ -17,7 +17,6 @@ import { ProblemModule } from "./problem/problem.module";
 import { SubmissionModule } from "./submission/submission.module";
 import { HackModule } from "./hack/hack.module";
 import { JudgeModule } from "./judge/judge.module";
-import { DiscussionModule } from "./discussion/discussion.module";
 import { MigrationModule } from "./migration/migration.module";
 
 @Module({
@@ -32,7 +31,6 @@ import { MigrationModule } from "./migration/migration.module";
     forwardRef(() => SubmissionModule),
     forwardRef(() => HackModule),
     forwardRef(() => JudgeModule),
-    forwardRef(() => DiscussionModule),
     forwardRef(() => MigrationModule)
   ],
   controllers: [AppController],
