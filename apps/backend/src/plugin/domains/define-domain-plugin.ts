@@ -7,9 +7,14 @@ import { BACKEND_DOMAIN_MODULES, type BackendDomainModules } from "../seam";
  *
  * Every domain plugin does the same thing: require the {@link BACKEND_DOMAIN_MODULES} registry (provided by
  * `@libreoj/backend-domain-modules`, which is listed first in the backend profile so the registry is available for
- * `inject.required`), resolve it in `apply`, and add its module through `ctx.effect` so the module is removed again
- * when the plugin is disposed. `name` is the bundle name the backend profile lists; `module` is the domain's Nest
- * module, whose own imports keep its providers resolving inside the same Nest root module graph.
+ * `inject.required`), resolve it in `apply`, and add its module through `ctx.effect`. `name` is the bundle name the
+ * backend profile lists; `module` is the domain's Nest module, whose own imports keep its providers resolving inside
+ * the same Nest root module graph.
+ *
+ * The registration is reversible in the kernel, but the Nest root module is built **once**, when the `http` provider
+ * starts, so removing an entry afterwards does not unregister the module from the running application. A domain is
+ * added or removed by editing the profile and restarting -- the startup-time composition the design calls for; there is
+ * deliberately no runtime hot-plugging.
  */
 export function defineDomainPlugin(name: string, module: unknown): PluginDefinition {
   return {

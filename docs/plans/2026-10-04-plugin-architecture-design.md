@@ -353,6 +353,7 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   迁走会让 `CodeLanguageService` 脱离 Nest 图）。插件在 `start` 阶段从已创建的 Nest 应用取出三个服务并 `register`。
   `ProblemTypeFactoryService` 退化为只注入该 seam 的薄适配器（对 `problem`/`submission`/`migration` 的 `type()` 签名不变）。
   **仍未做**：把三型拆成各自独立的 owner 插件（真正的"加题型=加插件"）—— 现在"哪个题型用哪个服务"已由插件持有，但三型仍由单个插件一次性登记。
+  **注意**：该能力 bundle 目前**不可禁用**——`problem`/`submission`（尚未迁移）仍依赖这个适配器，禁用即启动失败（详见 §16.5 末的限制）。
 - **judge 侧 `subtaskScoring` 独立 seam**：**不做**。子任务评分/聚集保持随题型与导入器。
 
 ## 15. 上游 UOJ（problem.conf）判题与数据兼容（U1–U4）
@@ -551,6 +552,15 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - ✅ **`discussion`（M5.7，2026-10-13）**：域插件 `@libreoj/backend-domain-discussion`，`DiscussionModule` 从 `AppModule.imports` 移除（`AppModule.imports` 11 项）。
   仍被 `homepage`/`problem` 直接 import。**验证（真机）**：OpenAPI **93 条**、13 条 `/api/discussion/*` 路由齐全，`queryDiscussion` 返回 400（校验，非 404）。
 - **尚未迁移**：`user`/`auth`（互为环，风险最高）及重层 `problem` `submission` `judge` `hack` `migration`。
+
+**两个必须知道的限制（审查发现，2026-10-13 记录）**：
+- **域只能在启动期增删，不能运行时装卸**：域插件用 `ctx.effect` 登记模块，内核侧是可逆的；但 **Nest 根模块只在 `http` provider 的 `start` 物化一次**，
+  之后把条目移出注册表**不会**从运行中的应用摘掉该模块的 controller。所以"禁用即卸载"一律指**改 profile/patch + 重启**（§16.4 的验证也是重启后进行的），
+  与 §3 已定的"不做运行时热插拔"一致。`defineDomainPlugin` 与 `domain-modules.plugin.ts` 的注释已写明这一点。
+- **`@libreoj/backend-problem-type-registry` 这个能力 bundle 不可禁用**：`ProblemTypeFactoryService` 注入该 seam，而**尚未迁移的 `problem`/`submission` 仍依赖这个适配器**，
+  所以禁用它会**直接启动失败**（`PluginModule` 的同步工厂取不到服务），而不是优雅降级。它是"能力 seam"，不是可选插件。
+- **防漂移**：`profiles/backend.yaml` 的 bundle 名单与 `main.ts` 的定义表由两道检查绑定——profile 顺序 ↔ `BACKEND_BUNDLE_NAMES`（测试），
+  名单 ↔ 定义（`Record<BackendBundleName, PluginDefinition>`，`check-types` 强制）。两边任一漏项都会在**构建期**失败，而不是等到 `host.load` 才炸。
 
 ### 16.6 M5.final 收口
 - `AppModule.imports` 清空（仅剩 core：`AppController`/`AppService`/filter/中间件）；`AppModule` 退役为 core 模块；残留硬编码注册表清零。

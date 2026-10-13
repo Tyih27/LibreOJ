@@ -24,6 +24,9 @@ import { PROBLEM_TYPE_REGISTRY, type ProblemTypeRegistry } from "./seam";
       useFactory: (): CodeLanguageRegistry => getPluginHost().root.get<CodeLanguageRegistry>(CODE_LANGUAGE_REGISTRY)
     },
     {
+      // Required: `ProblemTypeFactoryService` injects this token, and the remaining (un-migrated) problem and submission
+      // modules depend on that adapter, so disabling the `@libreoj/backend-problem-type-registry` bundle aborts boot
+      // rather than degrading. It is a capability seam, not an optional one.
       provide: PROBLEM_TYPE_REGISTRY,
       useFactory: (): ProblemTypeRegistry => getPluginHost().root.get<ProblemTypeRegistry>(PROBLEM_TYPE_REGISTRY)
     }

@@ -9,7 +9,7 @@ import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 
 import { HTTP } from "@libreoj/plugin-api";
 import { codeLanguagePlugin } from "@libreoj/plugin-code-language";
-import { composeLayers, InlineResolver, PluginHost } from "@libreoj/plugin-core";
+import { composeLayers, InlineResolver, PluginHost, type PluginDefinition } from "@libreoj/plugin-core";
 import {
   createHttpNestPlugin,
   type HttpNestServer,
@@ -34,6 +34,7 @@ import { MigrationService } from "./migration/migration.service";
 import { ErrorFilter } from "./error.filter";
 import { RecaptchaFilter } from "./recaptcha.filter";
 import { ClusterService } from "./cluster/cluster.service";
+import type { BackendBundleName } from "./plugin/bundles";
 import { domainModulesPlugin } from "./plugin/domain-modules.plugin";
 import { auditPlugin } from "./plugin/domains/audit.plugin";
 import { clusterPlugin } from "./plugin/domains/cluster.plugin";
@@ -62,28 +63,6 @@ String.prototype.format = function format(...args) {
 };
 
 export const appGitRepoInfo = getGitRepoInfo();
-
-const HTTP_NEST_BUNDLE = "@libreoj/plugin-http-nest";
-const BACKEND_INFRA_BUNDLE = "@libreoj/backend-infra";
-const PROBLEM_DATA_IMPORT_BUNDLE = "@libreoj/backend-problem-data-import";
-const CODE_LANGUAGE_BUNDLE = "@libreoj/plugin-code-language";
-const DOMAIN_MODULES_BUNDLE = "@libreoj/backend-domain-modules";
-const DOMAIN_HOMEPAGE_BUNDLE = "@libreoj/backend-domain-homepage";
-const DOMAIN_AUDIT_BUNDLE = "@libreoj/backend-domain-audit";
-const DOMAIN_FILE_BUNDLE = "@libreoj/backend-domain-file";
-const DOMAIN_MAIL_BUNDLE = "@libreoj/backend-domain-mail";
-const DOMAIN_METRICS_BUNDLE = "@libreoj/backend-domain-metrics";
-const DOMAIN_SETTINGS_BUNDLE = "@libreoj/backend-domain-settings";
-const DOMAIN_CLUSTER_BUNDLE = "@libreoj/backend-domain-cluster";
-const DOMAIN_CONFIG_BUNDLE = "@libreoj/backend-domain-config";
-const DOMAIN_CORS_BUNDLE = "@libreoj/backend-domain-cors";
-const DOMAIN_EVENT_REPORT_BUNDLE = "@libreoj/backend-domain-event-report";
-const DOMAIN_LOCALIZED_CONTENT_BUNDLE = "@libreoj/backend-domain-localized-content";
-const DOMAIN_PERMISSION_BUNDLE = "@libreoj/backend-domain-permission";
-const DOMAIN_GROUP_BUNDLE = "@libreoj/backend-domain-group";
-const DOMAIN_DISCUSSION_BUNDLE = "@libreoj/backend-domain-discussion";
-const BACKEND_PROBLEM_TYPE_REGISTRY_BUNDLE = "@libreoj/backend-problem-type-registry";
-const DOMAIN_PROBLEM_TYPE_BUNDLE = "@libreoj/backend-domain-problem-type";
 
 async function runMigration(app: NestExpressApplication, migrationConfigFile: string) {
   const migrationService = app.get(MigrationService);
@@ -169,45 +148,52 @@ async function bootstrap() {
       NestFactory.create(module as never, options as never) as unknown as Promise<NestApplicationLike>
   };
 
+  // The name -> definition table the profile's bundle names resolve through. The explicit `Record<BackendBundleName,
+  // PluginDefinition>` type is the guard: `check-types` fails if a name declared in `plugin/bundles.ts` has no
+  // definition here, or if a definition names a bundle that is not declared (and therefore not in the profile). The
+  // `http` provider is the only definition that cannot be a module constant -- its plugin is built from the runtime
+  // options above.
+  const backendBundles: Record<BackendBundleName, PluginDefinition> = {
+    "@libreoj/backend-domain-modules": domainModulesPlugin,
+    "@libreoj/plugin-http-nest": createHttpNestPlugin({
+      rootModuleFactory: () => ({ module: AppModule, imports: getBackendDomainModules().list() }),
+      nest,
+      host: bootstrapConfigService.config.server.hostname,
+      port: bootstrapConfigService.config.server.port,
+      configureApp,
+      // The application binds the port inside `ClusterService.initialization` below, so the provider only creates
+      // and configures the Nest application during its `start` phase.
+      listen: false,
+      nestOptions
+    }),
+    "@libreoj/backend-infra": infraPlugin,
+    "@libreoj/backend-problem-data-import": problemDataImportersPlugin,
+    "@libreoj/plugin-code-language": codeLanguagePlugin,
+    "@libreoj/backend-domain-homepage": homepagePlugin,
+    "@libreoj/backend-domain-audit": auditPlugin,
+    "@libreoj/backend-domain-file": filePlugin,
+    "@libreoj/backend-domain-mail": mailPlugin,
+    "@libreoj/backend-domain-metrics": metricsPlugin,
+    "@libreoj/backend-domain-settings": settingsPlugin,
+    "@libreoj/backend-domain-cluster": clusterPlugin,
+    "@libreoj/backend-domain-config": configPlugin,
+    "@libreoj/backend-domain-cors": corsPlugin,
+    "@libreoj/backend-domain-event-report": eventReportPlugin,
+    "@libreoj/backend-domain-localized-content": localizedContentPlugin,
+    "@libreoj/backend-domain-permission": permissionPlugin,
+    "@libreoj/backend-domain-group": groupPlugin,
+    "@libreoj/backend-domain-discussion": discussionPlugin,
+    "@libreoj/backend-problem-type-registry": problemTypeRegistryPlugin,
+    "@libreoj/backend-domain-problem-type": problemTypePlugin
+  };
+
   // The backend's one composition root. The host is registered with the module-level accessor before `host.load()`, so
   // Nest-side factories (evaluated while Nest is created from inside `host.load`) can read the already-loaded host
   // through `getPluginHost()`. The root module is `AppModule` with the domain plugins' contributed modules appended:
   // Nest merges a DynamicModule's `imports` with the target module's static imports (`@nestjs/core` scanner), so
   // returning `{ module: AppModule, imports }` is additive and preserves the `AppModule` token/singleton.
   const host = new PluginHost({
-    resolver: new InlineResolver({
-      [HTTP_NEST_BUNDLE]: createHttpNestPlugin({
-        rootModuleFactory: () => ({ module: AppModule, imports: getBackendDomainModules().list() }),
-        nest,
-        host: bootstrapConfigService.config.server.hostname,
-        port: bootstrapConfigService.config.server.port,
-        configureApp,
-        // The application binds the port inside `ClusterService.initialization` below, so the provider only creates
-        // and configures the Nest application during its `start` phase.
-        listen: false,
-        nestOptions
-      }),
-      [DOMAIN_MODULES_BUNDLE]: domainModulesPlugin,
-      [DOMAIN_HOMEPAGE_BUNDLE]: homepagePlugin,
-      [DOMAIN_AUDIT_BUNDLE]: auditPlugin,
-      [DOMAIN_FILE_BUNDLE]: filePlugin,
-      [DOMAIN_MAIL_BUNDLE]: mailPlugin,
-      [DOMAIN_METRICS_BUNDLE]: metricsPlugin,
-      [DOMAIN_SETTINGS_BUNDLE]: settingsPlugin,
-      [DOMAIN_CLUSTER_BUNDLE]: clusterPlugin,
-      [DOMAIN_CONFIG_BUNDLE]: configPlugin,
-      [DOMAIN_CORS_BUNDLE]: corsPlugin,
-      [DOMAIN_EVENT_REPORT_BUNDLE]: eventReportPlugin,
-      [DOMAIN_LOCALIZED_CONTENT_BUNDLE]: localizedContentPlugin,
-      [DOMAIN_PERMISSION_BUNDLE]: permissionPlugin,
-      [DOMAIN_GROUP_BUNDLE]: groupPlugin,
-      [DOMAIN_DISCUSSION_BUNDLE]: discussionPlugin,
-      [BACKEND_PROBLEM_TYPE_REGISTRY_BUNDLE]: problemTypeRegistryPlugin,
-      [DOMAIN_PROBLEM_TYPE_BUNDLE]: problemTypePlugin,
-      [BACKEND_INFRA_BUNDLE]: infraPlugin,
-      [PROBLEM_DATA_IMPORT_BUNDLE]: problemDataImportersPlugin,
-      [CODE_LANGUAGE_BUNDLE]: codeLanguagePlugin
-    }),
+    resolver: new InlineResolver({ ...backendBundles }),
     failureMode: "fatal"
   });
 
