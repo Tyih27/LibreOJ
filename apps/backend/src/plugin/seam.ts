@@ -101,6 +101,3 @@ export interface ProblemTypeRegistry {
     problemType: ProblemType
   ): ProblemTypeServiceInterface<ProblemJudgeInfo, SubmissionContent, SubmissionTestcaseResult>;
 }
-
-/** The problem type registry, as provided by the backend. */
-export type BackendProblemTypeRegistry = ProblemTypeRegistry;
