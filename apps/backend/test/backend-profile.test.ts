@@ -24,7 +24,13 @@ test("backend profile lists the bundles in load order", () => {
       "@libreoj/backend-domain-file",
       "@libreoj/backend-domain-mail",
       "@libreoj/backend-domain-metrics",
-      "@libreoj/backend-domain-settings"
+      "@libreoj/backend-domain-settings",
+      "@libreoj/backend-domain-cluster",
+      "@libreoj/backend-domain-config",
+      "@libreoj/backend-domain-cors",
+      "@libreoj/backend-domain-event-report",
+      "@libreoj/backend-domain-localized-content",
+      "@libreoj/backend-domain-permission"
     ]
   );
 });

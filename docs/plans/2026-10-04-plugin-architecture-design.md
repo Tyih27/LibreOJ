@@ -522,14 +522,19 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 `export const xPlugin = defineDomainPlugin("@libreoj/backend-domain-x", XModule)`。homepage 已回收到该范式。
 
 **进度**：
-- ✅ `homepage`（M5.1）、`audit`、`file`（M5.2）、`mail`、`metrics`、`settings`（M5.3，2026-10-13）。`AppModule.imports` 由 21 → **18** 项。
-- **注意（与 M5.1 的差别）**：`audit`/`file`/`mail`/`settings` 被其它模块直接 `import`（`mail` 经 `AuthModule`；`settings` 经 `@Global` 的 `SharedModule`），
-  因此**禁用它们的 bundle 不会让它们从图中消失**——对这类共享叶域，"插件化"是**注册点归一**（`AppModule.imports` 变小），而非 M5.1 那种"可从 profile 真正卸载"。
-  真正可卸载的前提是**没有别的模块直接 import 它**；`homepage` 满足，故能验证禁用。
-- `mail`/`settings` 原就**不在** `AppModule.imports`（分别经 `AuthModule`、`SharedModule` 可达），本轮只是把注册显式化；`metrics` 是唯一真正从 `AppModule.imports` 移除的。
-- 验证（M5.2/M5.3）：真机启动成功（`failureMode: fatal` 下 = 模块图全解析，且 `configureApp` 的 `nestApp.get(ErrorFilter)` 会解析注入 `MetricsService` 的 `ErrorFilter`，故 `MetricsService` 必已解析），
-  OpenAPI 仍 **93 条**；M5.2 的 `AuditService`/`FileService` 端点返回 400（校验，非 500）。
-  另记为**环境事实**（非缺陷）：`MetricsService` 每进程一个 Prometheus registry 与独立端口（master `basePort+0`、worker `basePort+id`），
+- ✅ **全部叶域迁移完成**：`homepage`（M5.1）、`audit`/`file`（M5.2）、`mail`/`metrics`/`settings`（M5.3）、
+  `cluster`/`config`/`cors`/`event-report`/`localized-content`/`permission`（M5.4，2026-10-13）。
+  `AppModule.imports` 由 21 → **14** 项（余下：`SharedModule` `PluginModule` `DatabaseModule` `RedisModule` `UserModule` `AuthModule`
+  `GroupModule` `ProblemModule` `ProblemTypeModule` `SubmissionModule` `HackModule` `JudgeModule` `DiscussionModule` `MigrationModule`）。
+- **只用"注册点归一"（本来就不在 `AppModule.imports`，由别的模块间接带入，故禁用其 bundle 不会移除）**：
+  `audit`（多域）、`mail`（经 `AuthModule`）、`settings`（经 `@Global` 的 `SharedModule`）、`cluster`（经 `EventReportModule`）、`config`（经 `SharedModule`）。
+- **仍在 `AppModule.imports` 中被移除、但被别的模块直接 import（故禁用也不会消失）**：`file`、`metrics`（`submission`/`judge`）、
+  `event-report`（`judge`）、`localized-content`（`problem`）、`permission`（`problem`/`discussion`）。
+- **真正可从 profile 卸载**（仅 `AppModule` 曾直接 import 它）：`homepage`、`cors`——两者都已用"禁用 bundle → 路由 404"端到端验证。
+- 验证：真机启动成功（`failureMode: fatal` 下 = 模块图全解析，且 `configureApp` 的 `nestApp.get(ErrorFilter)` 会解析注入 `MetricsService` 的 `ErrorFilter`，故 `MetricsService` 必已解析）；
+  OpenAPI 恒为 **93 条**（这批 12 个域中仅 `homepage`（3 条）与 `cors`（4 条）有路由，其余无）；M5.2 的 `AuditService`/`FileService` 端点返回 400（校验，非 500）。
+  禁用实验：`homepage` 93→90、`cors` 93→89，其余域不受影响。
+- 另记为**环境事实**（非缺陷）：`MetricsService` 每进程一个 Prometheus registry 与独立端口（master `basePort+0`、worker `basePort+id`），
   故 `libreoj_request_latency_seconds` 只在 worker 端口可见，抓 master 端口会误以为缺失。
 
 ### 16.6 M5.final 收口

@@ -36,10 +36,16 @@ import { RecaptchaFilter } from "./recaptcha.filter";
 import { ClusterService } from "./cluster/cluster.service";
 import { domainModulesPlugin } from "./plugin/domain-modules.plugin";
 import { auditPlugin } from "./plugin/domains/audit.plugin";
+import { clusterPlugin } from "./plugin/domains/cluster.plugin";
+import { configPlugin } from "./plugin/domains/config.plugin";
+import { corsPlugin } from "./plugin/domains/cors.plugin";
+import { eventReportPlugin } from "./plugin/domains/event-report.plugin";
 import { filePlugin } from "./plugin/domains/file.plugin";
 import { homepagePlugin } from "./plugin/domains/homepage.plugin";
+import { localizedContentPlugin } from "./plugin/domains/localized-content.plugin";
 import { mailPlugin } from "./plugin/domains/mail.plugin";
 import { metricsPlugin } from "./plugin/domains/metrics.plugin";
+import { permissionPlugin } from "./plugin/domains/permission.plugin";
 import { settingsPlugin } from "./plugin/domains/settings.plugin";
 import { infraPlugin } from "./plugin/infra.plugin";
 import { problemDataImportersPlugin } from "./plugin/problemDataImporters.plugin";
@@ -64,6 +70,12 @@ const DOMAIN_FILE_BUNDLE = "@libreoj/backend-domain-file";
 const DOMAIN_MAIL_BUNDLE = "@libreoj/backend-domain-mail";
 const DOMAIN_METRICS_BUNDLE = "@libreoj/backend-domain-metrics";
 const DOMAIN_SETTINGS_BUNDLE = "@libreoj/backend-domain-settings";
+const DOMAIN_CLUSTER_BUNDLE = "@libreoj/backend-domain-cluster";
+const DOMAIN_CONFIG_BUNDLE = "@libreoj/backend-domain-config";
+const DOMAIN_CORS_BUNDLE = "@libreoj/backend-domain-cors";
+const DOMAIN_EVENT_REPORT_BUNDLE = "@libreoj/backend-domain-event-report";
+const DOMAIN_LOCALIZED_CONTENT_BUNDLE = "@libreoj/backend-domain-localized-content";
+const DOMAIN_PERMISSION_BUNDLE = "@libreoj/backend-domain-permission";
 
 async function runMigration(app: NestExpressApplication, migrationConfigFile: string) {
   const migrationService = app.get(MigrationService);
@@ -174,6 +186,12 @@ async function bootstrap() {
       [DOMAIN_MAIL_BUNDLE]: mailPlugin,
       [DOMAIN_METRICS_BUNDLE]: metricsPlugin,
       [DOMAIN_SETTINGS_BUNDLE]: settingsPlugin,
+      [DOMAIN_CLUSTER_BUNDLE]: clusterPlugin,
+      [DOMAIN_CONFIG_BUNDLE]: configPlugin,
+      [DOMAIN_CORS_BUNDLE]: corsPlugin,
+      [DOMAIN_EVENT_REPORT_BUNDLE]: eventReportPlugin,
+      [DOMAIN_LOCALIZED_CONTENT_BUNDLE]: localizedContentPlugin,
+      [DOMAIN_PERMISSION_BUNDLE]: permissionPlugin,
       [BACKEND_INFRA_BUNDLE]: infraPlugin,
       [PROBLEM_DATA_IMPORT_BUNDLE]: problemDataImportersPlugin,
       [CODE_LANGUAGE_BUNDLE]: codeLanguagePlugin
