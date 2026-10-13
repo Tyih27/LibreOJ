@@ -16,8 +16,13 @@ import type { ConfigService } from "../config/config.service";
 import type { FileService } from "../file/file.service";
 import type { MailService } from "../mail/mail.service";
 import type { ProblemDataImporterRegistry } from "../problem-data-import/importer";
+import type { ProblemJudgeInfo } from "../problem/problem-judge-info.interface";
+import type { ProblemType } from "../problem/problem.entity";
+import type { ProblemTypeServiceInterface } from "../problem-type/problem-type-service.interface";
 import type { LockService } from "../redis/lock.service";
 import type { RedisService } from "../redis/redis.service";
+import type { SubmissionContent } from "../submission/submission-content.interface";
+import type { SubmissionTestcaseResult } from "../submission/submission-progress.interface";
 
 /** The backend configuration (the Nest-managed instance). */
 export const BACKEND_CONFIG = "backendConfig";
@@ -39,6 +44,9 @@ export const BACKEND_MAIL = "backendMail";
 
 /** The problem data importers used to auto-detect subtasks from testdata. */
 export const PROBLEM_DATA_IMPORTERS = "problemDataImporters";
+
+/** The registry of problem type services, keyed by {@link ProblemType}. */
+export const PROBLEM_TYPE_REGISTRY = "problemTypeRegistry";
 
 /** The registry of Nest modules contributed by backend domain plugins. */
 export const BACKEND_DOMAIN_MODULES = "backendDomainModules";
@@ -75,3 +83,24 @@ export interface BackendDomainModules {
   add(module: unknown): () => void;
   list(): unknown[];
 }
+
+/**
+ * The registry of problem type services, as provided by the backend.
+ *
+ * The mapping from a {@link ProblemType} to its service now comes from the `@libreoj/backend-problem-type-registry`
+ * plugin rather than being hard-coded in `ProblemTypeFactoryService`. `register` adds or replaces a type's service and
+ * returns an idempotent remover that unregisters it only while it is still the registered one; `type` resolves a
+ * type's service.
+ */
+export interface ProblemTypeRegistry {
+  register(
+    problemType: ProblemType,
+    service: ProblemTypeServiceInterface<ProblemJudgeInfo, SubmissionContent, SubmissionTestcaseResult>
+  ): () => void;
+  type(
+    problemType: ProblemType
+  ): ProblemTypeServiceInterface<ProblemJudgeInfo, SubmissionContent, SubmissionTestcaseResult>;
+}
+
+/** The problem type registry, as provided by the backend. */
+export type BackendProblemTypeRegistry = ProblemTypeRegistry;

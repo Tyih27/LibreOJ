@@ -4,6 +4,7 @@ import { CODE_LANGUAGE_REGISTRY, type CodeLanguageRegistry } from "@libreoj/plug
 
 import { getPluginHost } from "./plugin-host";
 import { PluginHostService } from "./plugin-host.service";
+import { PROBLEM_TYPE_REGISTRY, type ProblemTypeRegistry } from "./seam";
 
 /**
  * The bridge between the plugin kernel and Nest's dependency injection. The kernel itself is composed by `main.ts` and
@@ -21,8 +22,12 @@ import { PluginHostService } from "./plugin-host.service";
     {
       provide: CODE_LANGUAGE_REGISTRY,
       useFactory: (): CodeLanguageRegistry => getPluginHost().root.get<CodeLanguageRegistry>(CODE_LANGUAGE_REGISTRY)
+    },
+    {
+      provide: PROBLEM_TYPE_REGISTRY,
+      useFactory: (): ProblemTypeRegistry => getPluginHost().root.get<ProblemTypeRegistry>(PROBLEM_TYPE_REGISTRY)
     }
   ],
-  exports: [PluginHostService, CODE_LANGUAGE_REGISTRY]
+  exports: [PluginHostService, CODE_LANGUAGE_REGISTRY, PROBLEM_TYPE_REGISTRY]
 })
 export class PluginModule {}

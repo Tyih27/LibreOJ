@@ -346,10 +346,13 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **前端已实现**：`ProblemFilesPage` 的测试数据表页脚新增「导入数据包」按钮（`FileTable` 的 `onImportArchive`）：选 `.zip` → 破坏性确认（提示将替换全部测试数据）→ `callApiWithFileUpload` → 导入成功后重新拉取 testdata 刷新列表。API 客户端经 `generate-api` 从后端 Swagger 重新生成。
 
 ### 14.2 明确不做（后置）
-- **problem-type 整体插件化**（把三种题型做成 `problemTypeRegistry` 的插件，加题型=加插件）：**暂不做**。
-  原因：`ProblemTypeServiceInterface` 依赖 backend 实体（`ProblemFileEntity`/`FileEntity`）与领域接口
-  （`ProblemJudgeInfo`/`SubmissionContent`/`SubmissionProgress`），且被 `problem`/`submission`/`migration` 广泛消费，
-  属中等偏大改造；`problemType` 存库、前端认这几型，插件化后须保证内置三型默认启用。将来若需要再单独立项。
+- **problem-type 的 `problemTypeRegistry` seam：已实现（M5.5，2026-10-13，原"暂不做"已解除）**。
+  原顾虑是 `ProblemTypeServiceInterface` 依赖 backend 实体与领域接口、被 `problem`/`submission`/`migration` 广泛消费，属中等偏大改造。
+  实际采用**最小风险落法**：映射（`ProblemType` → 服务）从 `ProblemTypeFactoryService` 挪进插件提供的 `PROBLEM_TYPE_REGISTRY` seam，
+  但**三个题型服务仍是 Nest provider**（它们注入 `CodeLanguageService`，而 `CodeLanguageModule` 只被 `ProblemTypeModule` 引用，
+  迁走会让 `CodeLanguageService` 脱离 Nest 图）。插件在 `start` 阶段从已创建的 Nest 应用取出三个服务并 `register`。
+  `ProblemTypeFactoryService` 退化为只注入该 seam 的薄适配器（对 `problem`/`submission`/`migration` 的 `type()` 签名不变）。
+  **仍未做**：把三型拆成各自独立的 owner 插件（真正的"加题型=加插件"）—— 现在"哪个题型用哪个服务"已由插件持有，但三型仍由单个插件一次性登记。
 - **judge 侧 `subtaskScoring` 独立 seam**：**不做**。子任务评分/聚集保持随题型与导入器。
 
 ## 15. 上游 UOJ（problem.conf）判题与数据兼容（U1–U4）
@@ -536,6 +539,13 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   禁用实验：`homepage` 93→90、`cors` 93→89，其余域不受影响。
 - 另记为**环境事实**（非缺陷）：`MetricsService` 每进程一个 Prometheus registry 与独立端口（master `basePort+0`、worker `basePort+id`），
   故 `libreoj_request_latency_seconds` 只在 worker 端口可见，抓 master 端口会误以为缺失。
+- ✅ **`problem-type`（M5.5，2026-10-13）**：抽出 `PROBLEM_TYPE_REGISTRY` seam（取消 §14.2 的 deferral，详见 §14.2）；
+  两个 bundle：`@libreoj/backend-problem-type-registry`（能力 seam）与 `@libreoj/backend-domain-problem-type`（域模块）。
+  `ProblemTypeModule` 从 `AppModule.imports` 移除，`AppModule.imports` 由 14 → **13** 项。
+  **验证（真机）**：启动日志 `problem type registry registered: Traditional, Interaction, SubmitAnswer`；
+  `POST /api/submission/querySubmissionStatistics`（该路径先调 `type(problem.type).enableStatistics()`）返回 **201 + 真实统计**——
+  证明 `type()` 经 seam 取到了服务（若注册表为空会 500）。OpenAPI 仍 **93 条**。
+- **其余叶域**（`group` `user`/`auth` `discussion` 及重层 `problem` `submission` `judge` `hack` `migration`）**尚未迁移**。
 
 ### 16.6 M5.final 收口
 - `AppModule.imports` 清空（仅剩 core：`AppController`/`AppService`/filter/中间件）；`AppModule` 退役为 core 模块；残留硬编码注册表清零。

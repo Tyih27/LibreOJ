@@ -46,8 +46,10 @@ import { localizedContentPlugin } from "./plugin/domains/localized-content.plugi
 import { mailPlugin } from "./plugin/domains/mail.plugin";
 import { metricsPlugin } from "./plugin/domains/metrics.plugin";
 import { permissionPlugin } from "./plugin/domains/permission.plugin";
+import { problemTypePlugin } from "./plugin/domains/problem-type.plugin";
 import { settingsPlugin } from "./plugin/domains/settings.plugin";
 import { infraPlugin } from "./plugin/infra.plugin";
+import { problemTypeRegistryPlugin } from "./plugin/problem-type.plugin";
 import { problemDataImportersPlugin } from "./plugin/problemDataImporters.plugin";
 import { setPluginHost } from "./plugin/plugin-host";
 import { getBackendDomainModules } from "./plugin/services";
@@ -76,6 +78,8 @@ const DOMAIN_CORS_BUNDLE = "@libreoj/backend-domain-cors";
 const DOMAIN_EVENT_REPORT_BUNDLE = "@libreoj/backend-domain-event-report";
 const DOMAIN_LOCALIZED_CONTENT_BUNDLE = "@libreoj/backend-domain-localized-content";
 const DOMAIN_PERMISSION_BUNDLE = "@libreoj/backend-domain-permission";
+const BACKEND_PROBLEM_TYPE_REGISTRY_BUNDLE = "@libreoj/backend-problem-type-registry";
+const DOMAIN_PROBLEM_TYPE_BUNDLE = "@libreoj/backend-domain-problem-type";
 
 async function runMigration(app: NestExpressApplication, migrationConfigFile: string) {
   const migrationService = app.get(MigrationService);
@@ -192,6 +196,8 @@ async function bootstrap() {
       [DOMAIN_EVENT_REPORT_BUNDLE]: eventReportPlugin,
       [DOMAIN_LOCALIZED_CONTENT_BUNDLE]: localizedContentPlugin,
       [DOMAIN_PERMISSION_BUNDLE]: permissionPlugin,
+      [BACKEND_PROBLEM_TYPE_REGISTRY_BUNDLE]: problemTypeRegistryPlugin,
+      [DOMAIN_PROBLEM_TYPE_BUNDLE]: problemTypePlugin,
       [BACKEND_INFRA_BUNDLE]: infraPlugin,
       [PROBLEM_DATA_IMPORT_BUNDLE]: problemDataImportersPlugin,
       [CODE_LANGUAGE_BUNDLE]: codeLanguagePlugin

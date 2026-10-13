@@ -15,7 +15,6 @@ import { UserModule } from "./user/user.module";
 import { AuthModule } from "./auth/auth.module";
 import { GroupModule } from "./group/group.module";
 import { ProblemModule } from "./problem/problem.module";
-import { ProblemTypeModule } from "./problem-type/problem-type.module";
 import { SubmissionModule } from "./submission/submission.module";
 import { HackModule } from "./hack/hack.module";
 import { JudgeModule } from "./judge/judge.module";
@@ -32,7 +31,6 @@ import { MigrationModule } from "./migration/migration.module";
     forwardRef(() => AuthModule),
     forwardRef(() => GroupModule),
     forwardRef(() => ProblemModule),
-    forwardRef(() => ProblemTypeModule),
     forwardRef(() => SubmissionModule),
     forwardRef(() => HackModule),
     forwardRef(() => JudgeModule),
