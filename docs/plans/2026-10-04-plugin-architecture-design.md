@@ -522,12 +522,15 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 `export const xPlugin = defineDomainPlugin("@libreoj/backend-domain-x", XModule)`。homepage 已回收到该范式。
 
 **进度**：
-- ✅ `homepage`（M5.1）、`audit`、`file`（M5.2，2026-10-13）。`audit` 原来并不在 `AppModule.imports`（仅经其它模块间接可达），本次将其显式纳入插件图；`file` 从 `AppModule.imports` 移除。
-- **注意（与 M5.1 的差别）**：`audit`/`file` 被 `user`/`problem`/`submission`/`hack`/`judge`/`group`/`migration`/`auth`/`discussion` 等大量模块直接 `import`，
-  因此**禁用它们的 bundle 不会让它们从图中消失**（仍被别的模块带入）——对这类共享叶域，"插件化"是**注册点归一**（`AppModule.imports` 变小），
-  而非 M5.1 那种"可从 profile 真正卸载"。真正可卸载的前提是**没有别的模块直接 import 它**；`homepage` 满足，故能验证禁用。
-- 验证（M5.2）：真机启动成功（`failureMode: fatal` 下 = 模块图全解析），OpenAPI 仍 **93 条**（`audit`/`file` 本就无路由），
-  `POST /api/user/queryAuditLogs`（用 `AuditService`）与 `POST /api/problem/downloadProblemFiles`（用 `FileService`）均返回 **400**（参数校验，非 500 ⇒ 服务已解析）。
+- ✅ `homepage`（M5.1）、`audit`、`file`（M5.2）、`mail`、`metrics`、`settings`（M5.3，2026-10-13）。`AppModule.imports` 由 21 → **18** 项。
+- **注意（与 M5.1 的差别）**：`audit`/`file`/`mail`/`settings` 被其它模块直接 `import`（`mail` 经 `AuthModule`；`settings` 经 `@Global` 的 `SharedModule`），
+  因此**禁用它们的 bundle 不会让它们从图中消失**——对这类共享叶域，"插件化"是**注册点归一**（`AppModule.imports` 变小），而非 M5.1 那种"可从 profile 真正卸载"。
+  真正可卸载的前提是**没有别的模块直接 import 它**；`homepage` 满足，故能验证禁用。
+- `mail`/`settings` 原就**不在** `AppModule.imports`（分别经 `AuthModule`、`SharedModule` 可达），本轮只是把注册显式化；`metrics` 是唯一真正从 `AppModule.imports` 移除的。
+- 验证（M5.2/M5.3）：真机启动成功（`failureMode: fatal` 下 = 模块图全解析，且 `configureApp` 的 `nestApp.get(ErrorFilter)` 会解析注入 `MetricsService` 的 `ErrorFilter`，故 `MetricsService` 必已解析），
+  OpenAPI 仍 **93 条**；M5.2 的 `AuditService`/`FileService` 端点返回 400（校验，非 500）。
+  另记为**环境事实**（非缺陷）：`MetricsService` 每进程一个 Prometheus registry 与独立端口（master `basePort+0`、worker `basePort+id`），
+  故 `libreoj_request_latency_seconds` 只在 worker 端口可见，抓 master 端口会误以为缺失。
 
 ### 16.6 M5.final 收口
 - `AppModule.imports` 清空（仅剩 core：`AppController`/`AppService`/filter/中间件）；`AppModule` 退役为 core 模块；残留硬编码注册表清零。

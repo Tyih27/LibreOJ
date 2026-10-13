@@ -25,7 +25,6 @@ import { JudgeModule } from "./judge/judge.module";
 import { DiscussionModule } from "./discussion/discussion.module";
 import { MigrationModule } from "./migration/migration.module";
 import { EventReportModule } from "./event-report/event-report.module";
-import { MetricsModule } from "./metrics/metrics.module";
 
 @Module({
   imports: [
@@ -46,8 +45,7 @@ import { MetricsModule } from "./metrics/metrics.module";
     forwardRef(() => JudgeModule),
     forwardRef(() => DiscussionModule),
     forwardRef(() => EventReportModule),
-    forwardRef(() => MigrationModule),
-    forwardRef(() => MetricsModule)
+    forwardRef(() => MigrationModule)
   ],
   controllers: [AppController],
   providers: [AppService, ErrorFilter, RecaptchaFilter]

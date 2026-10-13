@@ -38,6 +38,9 @@ import { domainModulesPlugin } from "./plugin/domain-modules.plugin";
 import { auditPlugin } from "./plugin/domains/audit.plugin";
 import { filePlugin } from "./plugin/domains/file.plugin";
 import { homepagePlugin } from "./plugin/domains/homepage.plugin";
+import { mailPlugin } from "./plugin/domains/mail.plugin";
+import { metricsPlugin } from "./plugin/domains/metrics.plugin";
+import { settingsPlugin } from "./plugin/domains/settings.plugin";
 import { infraPlugin } from "./plugin/infra.plugin";
 import { problemDataImportersPlugin } from "./plugin/problemDataImporters.plugin";
 import { setPluginHost } from "./plugin/plugin-host";
@@ -58,6 +61,9 @@ const DOMAIN_MODULES_BUNDLE = "@libreoj/backend-domain-modules";
 const DOMAIN_HOMEPAGE_BUNDLE = "@libreoj/backend-domain-homepage";
 const DOMAIN_AUDIT_BUNDLE = "@libreoj/backend-domain-audit";
 const DOMAIN_FILE_BUNDLE = "@libreoj/backend-domain-file";
+const DOMAIN_MAIL_BUNDLE = "@libreoj/backend-domain-mail";
+const DOMAIN_METRICS_BUNDLE = "@libreoj/backend-domain-metrics";
+const DOMAIN_SETTINGS_BUNDLE = "@libreoj/backend-domain-settings";
 
 async function runMigration(app: NestExpressApplication, migrationConfigFile: string) {
   const migrationService = app.get(MigrationService);
@@ -165,6 +171,9 @@ async function bootstrap() {
       [DOMAIN_HOMEPAGE_BUNDLE]: homepagePlugin,
       [DOMAIN_AUDIT_BUNDLE]: auditPlugin,
       [DOMAIN_FILE_BUNDLE]: filePlugin,
+      [DOMAIN_MAIL_BUNDLE]: mailPlugin,
+      [DOMAIN_METRICS_BUNDLE]: metricsPlugin,
+      [DOMAIN_SETTINGS_BUNDLE]: settingsPlugin,
       [BACKEND_INFRA_BUNDLE]: infraPlugin,
       [PROBLEM_DATA_IMPORT_BUNDLE]: problemDataImportersPlugin,
       [CODE_LANGUAGE_BUNDLE]: codeLanguagePlugin
