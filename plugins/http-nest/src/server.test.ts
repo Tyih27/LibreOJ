@@ -151,3 +151,29 @@ test("prepare() creates and configures the application without binding", async (
 
   await server.close();
 });
+
+test("resolves a rootModule factory before creating the application", async () => {
+  const contributed = { module: TestRootModule, imports: [] };
+  let received: unknown = null;
+
+  const capturingNest: NestFactoryLike = {
+    create: async module => {
+      received = module;
+      return {
+        use: () => undefined,
+        listen: async () => undefined,
+        getHttpServer: () => ({ address: () => null }),
+        get: () => undefined,
+        close: async () => undefined
+      } as unknown as NestApplicationLike;
+    }
+  };
+
+  const server = new HttpNestServer({ rootModuleFactory: async () => contributed, nest: capturingNest, listen: false });
+  await server.prepare();
+  try {
+    assert.equal(received, contributed, "the module returned by the factory should reach nest.create");
+  } finally {
+    await server.close();
+  }
+});

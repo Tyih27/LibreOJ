@@ -1,0 +1,13 @@
+active: backend
+
+profiles:
+  backend:
+    bundles:
+      # `backend-domain-modules` is first so its registry is registered before any domain plugin's `apply` runs.
+      - "@libreoj/backend-domain-modules"
+      - "@libreoj/plugin-http-nest"
+      - "@libreoj/backend-infra"
+      - "@libreoj/backend-problem-data-import"
+      - "@libreoj/plugin-code-language"
+      # Domain bundles follow the infrastructure bundles; each contributes its Nest module through the registry.
+      - "@libreoj/backend-domain-homepage"

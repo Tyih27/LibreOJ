@@ -26,7 +26,6 @@ import { JudgeModule } from "./judge/judge.module";
 import { DiscussionModule } from "./discussion/discussion.module";
 import { MigrationModule } from "./migration/migration.module";
 import { EventReportModule } from "./event-report/event-report.module";
-import { HomepageModule } from "./homepage/homepage.module";
 import { MetricsModule } from "./metrics/metrics.module";
 
 @Module({
@@ -49,7 +48,6 @@ import { MetricsModule } from "./metrics/metrics.module";
     forwardRef(() => JudgeModule),
     forwardRef(() => DiscussionModule),
     forwardRef(() => EventReportModule),
-    forwardRef(() => HomepageModule),
     forwardRef(() => MigrationModule),
     forwardRef(() => MetricsModule)
   ],

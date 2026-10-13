@@ -1,5 +1,6 @@
 import util from "util";
 import cluster from "cluster";
+import * as path from "node:path";
 
 import { Logger, ValidationPipe, type NestApplicationOptions } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
@@ -8,7 +9,7 @@ import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 
 import { HTTP } from "@libreoj/plugin-api";
 import { codeLanguagePlugin } from "@libreoj/plugin-code-language";
-import { InlineResolver, PluginHost } from "@libreoj/plugin-core";
+import { composeLayers, InlineResolver, PluginHost } from "@libreoj/plugin-core";
 import {
   createHttpNestPlugin,
   type HttpNestServer,
@@ -33,9 +34,12 @@ import { MigrationService } from "./migration/migration.service";
 import { ErrorFilter } from "./error.filter";
 import { RecaptchaFilter } from "./recaptcha.filter";
 import { ClusterService } from "./cluster/cluster.service";
+import { domainModulesPlugin } from "./plugin/domain-modules.plugin";
+import { homepagePlugin } from "./plugin/domains/homepage.plugin";
 import { infraPlugin } from "./plugin/infra.plugin";
 import { problemDataImportersPlugin } from "./plugin/problemDataImporters.plugin";
 import { setPluginHost } from "./plugin/plugin-host";
+import { getBackendDomainModules } from "./plugin/services";
 
 // eslint-disable-next-line no-extend-native
 String.prototype.format = function format(...args) {
@@ -48,6 +52,8 @@ const HTTP_NEST_BUNDLE = "@libreoj/plugin-http-nest";
 const BACKEND_INFRA_BUNDLE = "@libreoj/backend-infra";
 const PROBLEM_DATA_IMPORT_BUNDLE = "@libreoj/backend-problem-data-import";
 const CODE_LANGUAGE_BUNDLE = "@libreoj/plugin-code-language";
+const DOMAIN_MODULES_BUNDLE = "@libreoj/backend-domain-modules";
+const DOMAIN_HOMEPAGE_BUNDLE = "@libreoj/backend-domain-homepage";
 
 async function runMigration(app: NestExpressApplication, migrationConfigFile: string) {
   const migrationService = app.get(MigrationService);
@@ -135,12 +141,13 @@ async function bootstrap() {
 
   // The backend's one composition root. The host is registered with the module-level accessor before `host.load()`, so
   // Nest-side factories (evaluated while Nest is created from inside `host.load`) can read the already-loaded host
-  // through `getPluginHost()`. The Nest application is created from the original `AppModule`, unchanged, so the module
-  // graph is preserved.
+  // through `getPluginHost()`. The root module is `AppModule` with the domain plugins' contributed modules appended:
+  // Nest merges a DynamicModule's `imports` with the target module's static imports (`@nestjs/core` scanner), so
+  // returning `{ module: AppModule, imports }` is additive and preserves the `AppModule` token/singleton.
   const host = new PluginHost({
     resolver: new InlineResolver({
       [HTTP_NEST_BUNDLE]: createHttpNestPlugin({
-        rootModule: AppModule,
+        rootModuleFactory: () => ({ module: AppModule, imports: getBackendDomainModules().list() }),
         nest,
         host: bootstrapConfigService.config.server.hostname,
         port: bootstrapConfigService.config.server.port,
@@ -150,6 +157,8 @@ async function bootstrap() {
         listen: false,
         nestOptions
       }),
+      [DOMAIN_MODULES_BUNDLE]: domainModulesPlugin,
+      [DOMAIN_HOMEPAGE_BUNDLE]: homepagePlugin,
       [BACKEND_INFRA_BUNDLE]: infraPlugin,
       [PROBLEM_DATA_IMPORT_BUNDLE]: problemDataImportersPlugin,
       [CODE_LANGUAGE_BUNDLE]: codeLanguagePlugin
@@ -159,9 +168,12 @@ async function bootstrap() {
 
   setPluginHost(host);
 
-  await host.load([
-    { bundles: [HTTP_NEST_BUNDLE, BACKEND_INFRA_BUNDLE, PROBLEM_DATA_IMPORT_BUNDLE, CODE_LANGUAGE_BUNDLE] }
-  ]);
+  // The profile names the bundles in load order; `composeLayers` turns it (plus the optional site patch) into the
+  // layers `host.load` consumes. `backend-domain-modules` is listed first, so every domain plugin's `apply` can
+  // register its Nest module(s) before the `http` provider's `start` evaluates the root-module factory.
+  const profile = process.env.LIBREOJ_BACKEND_PROFILE ?? path.resolve(__dirname, "../../../profiles/backend.yaml");
+
+  await host.load(composeLayers({ profile, homePatchFile: process.env.LIBREOJ_PATCH_FILE }));
 
   const httpServer = host.root.get<HttpNestServer>(HTTP);
   const app = httpServer.application as NestExpressApplication;

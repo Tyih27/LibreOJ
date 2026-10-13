@@ -448,3 +448,78 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **已定（U4-b）**：额外测试作为**闸门**参与判题，失败分数 **97**（UOJ 原样）；额外测试结果在提交页**单独一栏**展示；judge 成功后**向后端索取**上传地址再直传 std 输出。
 - **已定（U4-c）**：范围含**全局 `/hacks` 页**与题目页列表；Hack 详情页**展示判题详情**（故后端 `getHack` 暴露 `details`）；`hackable` 开关放在**题目文件页**。
 - **实施顺序**：U2 的 checker 契约（变体 B）是 U1 importer 的前置（importer 要产出 `{type:"testlib",name}`），故**先落 U2 的 checker 契约+19 个实现**，再做 U1 importer。
+
+## 16. M5 逐域迁移（后端插件化）
+
+- 日期：2026-10-13 立项
+- 对应 §9 路线表 **M5**（"逐域迁移 backend 其余模块，删除硬编码注册表"）。
+
+### 16.0 目标与决策登记（已拍板）
+- **目标**：把 `apps/backend` 的业务域逐个变成内核插件，`AppModule.imports` 的硬编码逐域消失；达成验收标准 §2 的 1/2/3/5/6
+  （装插件不改核心 / `dump-config` 可见 / 卸载即撤销 / 多 profile / 无特权内核）。
+- **迁移形态 = 组合级插件化**：每个域由一个插件把它的 **Nest 模块**（及其拥有的注册表 seam）登记到内核；域的实现代码**暂留** `apps/backend/src/<域>`
+  （跨域 TypeORM 实体关系与循环依赖过多，实现级搬家不在本轮）。
+- **Nest 终态 = 移除**：本轮**不做**，单列为后续里程碑 **M7**（见 16.7）；M5 的 seam 契约与域边界必须**不阻碍**它。
+- **M5.1 试点 = `homepage`**（真实域：1 controller、无 entity、依赖 5 个域）。
+- **M5.0 = http seam 支持"插件贡献模块" + 后端 profile 化**。
+
+### 16.1 硬约束（每一步都必须保持）
+1. **Swagger 不破**：`/docs-json` 是前端 `scripts/generate-api.js` 的**唯一来源**；迁移后路由与 OpenAPI 必须等价。
+2. **请求管线不变**：全局 `ValidationPipe(transform, whitelist, forbidNonWhitelisted)`、`ErrorFilter`/`RecaptchaFilter`、
+   `AuthMiddleware`、`MetricsMiddleware`、限流、`setGlobalPrefix("api")`。
+3. **TypeORM 不变**：实体注册与 `synchronize: true` 行为不变（组合级不迁移实体）。
+4. **环依赖共存**：域间存在环（`user↔auth`、`problem↔submission`、`user→submission→problem→user`），故无纯拓扑序；
+   迁移期"已迁移插件"与"残留 Nest 代码"必须**共享同一批 Nest 单例**（infra seam 已把 config/db/redis/lock/storage/mail 登记进内核，正是为此）。
+
+### 16.2 现状（侦察摘要）
+- 组合根已是内核，但 **Nest 模块图静态**：`main.ts` 用 `InlineResolver` 硬编码 4 个 bundle（http-nest/infra/problemDataImporters/code-language）
+  并以 `rootModule: AppModule` 交给 http provider；`AppModule.imports` 硬编码 21 个域模块；后端**没有 profile 文件、不走 dump-config**。
+- `HttpNestServer` 只支持 `route(method,path,handler)` + `use(middleware)`，**不支持插件贡献 Nest 模块/controller**。→ 直接改裸 handler 会丢
+  DI/校验/鉴权/Swagger，因此必须扩展 seam。
+- 后端内部插件位置既定：`apps/backend/src/plugin/`（依赖后端类型的，如 `problemDataImporters`）；`plugins/*` 只放无后端依赖的能力插件（如 `code-language`）。
+- **M2 样板只迁移过"能力注册表"**（`code-language`：无依赖自包含能力 → `plugins/*`，后端留 `@Inject(SEAM)` 薄适配器）；**从未迁移带 controller 的业务域**。
+
+### 16.3 M5.0 地基（已实现，2026-10-13）
+- **M5.0-a｜后端 profile 化**（已实现，对齐 judge 的 `apps/judge/src/index.ts` 写法）：
+  新增 `profiles/backend.yaml` 列出 bundle 与顺序（`backend-domain-modules` 居首）；`main.ts` 改走
+  `composeLayers({ profile, homePatchFile: process.env.LIBREOJ_PATCH_FILE })`，profile 路径可用 `LIBREOJ_BACKEND_PROFILE` 覆盖。
+  bundle **定义**仍在 `main.ts` 的 `InlineResolver`（http-nest 需要运行时 options：Nest runtime、configureApp、listen 门控），profile 只决定**顺序与启停**。
+- **M5.0-b｜http seam 支持"插件贡献 Nest 模块"**（已实现）：
+  - 后端内部新增 seam **`BACKEND_DOMAIN_MODULES`**（`apps/backend/src/plugin/domain-modules.plugin.ts` 的 `provide`，实现为插入有序的 `Set`）；
+    域插件在 `apply` 时登记 `ctx.effect(() => modules.add(SomeModule))`（`add` 返回的 remover 即 effect 的 disposer）。类型访问器 `getBackendDomainModules()`。
+  - `HttpNestOptions` 用**两个显式字段**而非"值或工厂"的联合类型——Nest 模块本身是 class（＝函数），联合类型在不借助启发式的前提下无法与工厂区分：
+    `rootModule?: unknown`（静态值）与 `rootModuleFactory?: () => unknown | Promise<unknown>`（在 `start` 阶段求值，优先）；二者皆缺则 `createApplication` 报错。
+    `main.ts` 传 `rootModuleFactory: () => ({ module: AppModule, imports: getBackendDomainModules().list() })`。
+  - **已核实（读 `@nestjs/core` 源码，2026-10-13）**：`DependenciesScanner.scanForModules` 对 DynamicModule 取
+    `reflectMetadata(IMPORTS, dyn.module) ++ (dyn.imports ?? [])`（`@nestjs/core/scanner.js:43-47`），且 `container.addModule`
+    以 `dyn.module`（类）为 token → **`imports` 是叠加（merge），且 AppModule 单例身份保留**。故
+    `NestFactory.create({ module: AppModule, imports: [...域模块] })` 可直接用，未迁移域行为不变。
+- **出口（已验证）**：`plugin-http-nest`（build / check-types / test 15/15 / check-format）与 backend（check-types / lint / check-format / test 68/68）全绿；
+  真机启动成功——证明 profile 路径解析正确、生产路径走的就是 `rootModuleFactory`，且空贡献下模块图与 OpenAPI 与改动前一致（21 个模块、93 条路径）。
+  `apps/backend/test/backend-profile.test.ts` 断言 profile 的 bundle 顺序且 `resolveConfig` 无警告。
+- **已知限制**：通用 `dump-config` CLI 用 `NodeResolver` 按包名解析，**解析不了后端内部 bundle**（`@libreoj/backend-domain-modules` 等非包名）与
+  `createHttpNestPlugin(options)` 工厂，故 `dump-config profiles/backend.yaml` 目前报 "Cannot resolve plugin …"。后端可 dump 需一个复用同一 `InlineResolver` 的后端专用入口，**留到后续**；本轮以 profile 解析测试替代。
+
+### 16.4 M5.1 试点（`homepage`，已实现，2026-10-13）
+- 新增 `apps/backend/src/plugin/domains/homepage.plugin.ts`（`@libreoj/backend-domain-homepage`，`inject.required=[BACKEND_DOMAIN_MODULES]`，
+  `apply` 里 `ctx.effect(() => modules.add(HomepageModule))`）；从 `AppModule.imports` 移除 `HomepageModule`；
+  加入 `profiles/backend.yaml`（列在基础设施 bundle 之后）与 `main.ts` 的 `InlineResolver` 映射。**未改动 `src/homepage/` 任何代码**（组合级插件化）。
+  这也验证了 `app.get(HomepageService)`（`migration/migrations/discussion.ts`）在同根模块图下仍可用。
+- **出口（已验证）**：
+  - 正常启动：OpenAPI **93 条路径**（与 M5.0 基线一致），`/api/homepage/*` 3 条齐全，`GET /api/homepage/getHomepage` 返回 **400**（缺参数，非 404 → 路由已注册）。
+  - `backend-profile.test.ts` 断言新顺序且无警告；backend `check-types`/`lint`/`check-format`/`test` 68/68 全绿。
+  - **禁用即卸载（端到端）**：以 `LIBREOJ_PATCH_FILE` 传 `patch: {"@libreoj/backend-domain-homepage": {disabled: true}}` 重启后，
+    OpenAPI 降为 **90 条**（正好少 3 条 homepage）、`/api/homepage/*` 全部 **404**，而 `POST /api/problem/getProblem` 仍 **201**——证明"域的可变性"名副其实。
+
+### 16.5 M5.2…n 逐域迁移（分层顺序）
+- **叶**（无域依赖）：`audit` `file` `mail` `metrics` `settings` `cluster` `config` `cors` `event-report` `localized-content` `permission`
+- **中**：`group` `problem-type`（注册表 seam）`user`/`auth` `discussion`
+- **重**：`problem` `submission` `judge` `hack`（`homepage` 已在 M5.1）`migration`
+- 每域一个插件；每步都要求功能等价（`pnpm check` + `test` + Swagger 等价 + 真机冒烟）。
+
+### 16.6 M5.final 收口
+- `AppModule.imports` 清空（仅剩 core：`AppController`/`AppService`/filter/中间件）；`AppModule` 退役为 core 模块；残留硬编码注册表清零。
+
+### 16.7 后续（不在 M5 内）
+- **M7｜终态移除 Nest**（§3 已定终态）：新增非 Nest 的 `http` provider，把域插件的端点在 **provider 无关**的形式下重述，
+  OpenAPI 改由 provider 无关的路由元数据生成（或另立 OpenAPI seam）。M5 **只保证不阻碍**它，不执行。

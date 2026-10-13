@@ -40,6 +40,9 @@ export const BACKEND_MAIL = "backendMail";
 /** The problem data importers used to auto-detect subtasks from testdata. */
 export const PROBLEM_DATA_IMPORTERS = "problemDataImporters";
 
+/** The registry of Nest modules contributed by backend domain plugins. */
+export const BACKEND_DOMAIN_MODULES = "backendDomainModules";
+
 /** The backend configuration service, as provided by the backend. */
 export type BackendConfig = ConfigService;
 
@@ -60,3 +63,15 @@ export type BackendMail = MailService;
 
 /** The problem data importer registry, as provided by the backend. */
 export type BackendProblemDataImporters = ProblemDataImporterRegistry;
+
+/**
+ * The registry a domain plugin uses to contribute its Nest module(s) to the application root.
+ *
+ * `add` records a module and returns a remover that unregisters it, so a domain plugin ties the registration to its
+ * own lifetime with `ctx.effect(() => modules.add(SomeModule))`. `list` returns the contributed modules in
+ * registration order, which `main.ts` appends to `AppModule`'s imports.
+ */
+export interface BackendDomainModules {
+  add(module: unknown): () => void;
+  list(): unknown[];
+}

@@ -10,6 +10,7 @@
 import type {
   BackendConfig,
   BackendDatabase,
+  BackendDomainModules,
   BackendLock,
   BackendMail,
   BackendProblemDataImporters,
@@ -19,6 +20,7 @@ import type {
 import {
   BACKEND_CONFIG,
   BACKEND_DATABASE,
+  BACKEND_DOMAIN_MODULES,
   BACKEND_LOCK,
   BACKEND_MAIL,
   BACKEND_REDIS,
@@ -57,4 +59,8 @@ export function getMail(): BackendMail {
 
 export function getProblemDataImporters(): BackendProblemDataImporters {
   return resolve<BackendProblemDataImporters>(PROBLEM_DATA_IMPORTERS);
+}
+
+export function getBackendDomainModules(): BackendDomainModules {
+  return resolve<BackendDomainModules>(BACKEND_DOMAIN_MODULES);
 }

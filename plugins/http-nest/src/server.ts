@@ -29,8 +29,18 @@ export interface NestFactoryLike {
 
 /** Options for {@link HttpNestServer}. */
 export interface HttpNestOptions {
-  /** The Nest module to mount -- typically the application's existing root module. */
-  rootModule: unknown;
+  /**
+   * The Nest module to mount. Ignored when {@link rootModuleFactory} is given. The two are separate fields rather than
+   * one value-or-factory union because a decorated Nest module is itself a function (a class), so a union could not be
+   * told apart from a factory without a heuristic.
+   */
+  rootModule?: unknown;
+  /**
+   * Builds the Nest root module just before `nest.create` and takes precedence over {@link rootModule}. A returned
+   * promise is awaited. Use it when the module is only known once the composition root has loaded -- for example a root
+   * module plus the modules contributed by other plugins.
+   */
+  rootModuleFactory?: () => unknown | Promise<unknown>;
   /** The caller's Nest runtime, so this provider shares the application's single Nest instance. */
   nest: NestFactoryLike;
   host?: string;
@@ -245,7 +255,10 @@ export class HttpNestServer implements HttpServer {
 
   private async createApplication(generation: number): Promise<NestApplicationLike> {
     const router = this.buildRouter();
-    const app = await this.options.nest.create(this.options.rootModule, this.options.nestOptions ?? { logger: false });
+    const { rootModule, rootModuleFactory } = this.options;
+    const module = rootModuleFactory ? await rootModuleFactory() : rootModule;
+    if (module === undefined) throw new Error("HttpNestServer needs a rootModule or a rootModuleFactory");
+    const app = await this.options.nest.create(module, this.options.nestOptions ?? { logger: false });
 
     try {
       if (generation !== this.generation) throw new Error("HttpNestServer was closed while preparing");
