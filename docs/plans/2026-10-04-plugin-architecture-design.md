@@ -545,7 +545,10 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   **验证（真机）**：启动日志 `problem type registry registered: Traditional, Interaction, SubmitAnswer`；
   `POST /api/submission/querySubmissionStatistics`（该路径先调 `type(problem.type).enableStatistics()`）返回 **201 + 真实统计**——
   证明 `type()` 经 seam 取到了服务（若注册表为空会 500）。OpenAPI 仍 **93 条**。
-- **其余叶域**（`group` `user`/`auth` `discussion` 及重层 `problem` `submission` `judge` `hack` `migration`）**尚未迁移**。
+- ✅ **`group`（M5.6，2026-10-13）**：域插件 `@libreoj/backend-domain-group`，`GroupModule` 从 `AppModule.imports` 移除（`AppModule.imports` 12 项）。
+  仍被 `discussion`/`problem`/`permission`/`auth` 直接 import，故禁用不会移除它。
+  **验证（真机）**：OpenAPI **93 条**、10 条 `/api/group/*` 路由齐全，`GET /api/group/getGroupList` 返回 **200**。
+- **尚未迁移**：`user`/`auth` `discussion` 及重层 `problem` `submission` `judge` `hack` `migration`。
 
 ### 16.6 M5.final 收口
 - `AppModule.imports` 清空（仅剩 core：`AppController`/`AppService`/filter/中间件）；`AppModule` 退役为 core 模块；残留硬编码注册表清零。

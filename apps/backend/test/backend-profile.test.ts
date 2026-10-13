@@ -31,6 +31,7 @@ test("backend profile lists the bundles in load order", () => {
       "@libreoj/backend-domain-event-report",
       "@libreoj/backend-domain-localized-content",
       "@libreoj/backend-domain-permission",
+      "@libreoj/backend-domain-group",
       "@libreoj/backend-problem-type-registry",
       "@libreoj/backend-domain-problem-type"
     ]

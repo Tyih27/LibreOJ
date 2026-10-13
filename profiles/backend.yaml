@@ -22,6 +22,7 @@ profiles:
       - "@libreoj/backend-domain-event-report"
       - "@libreoj/backend-domain-localized-content"
       - "@libreoj/backend-domain-permission"
+      - "@libreoj/backend-domain-group"
       # Problem types: the registry capability is applied before the domain module that consumes it.
       - "@libreoj/backend-problem-type-registry"
       - "@libreoj/backend-domain-problem-type"

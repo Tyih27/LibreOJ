@@ -41,6 +41,7 @@ import { configPlugin } from "./plugin/domains/config.plugin";
 import { corsPlugin } from "./plugin/domains/cors.plugin";
 import { eventReportPlugin } from "./plugin/domains/event-report.plugin";
 import { filePlugin } from "./plugin/domains/file.plugin";
+import { groupPlugin } from "./plugin/domains/group.plugin";
 import { homepagePlugin } from "./plugin/domains/homepage.plugin";
 import { localizedContentPlugin } from "./plugin/domains/localized-content.plugin";
 import { mailPlugin } from "./plugin/domains/mail.plugin";
@@ -78,6 +79,7 @@ const DOMAIN_CORS_BUNDLE = "@libreoj/backend-domain-cors";
 const DOMAIN_EVENT_REPORT_BUNDLE = "@libreoj/backend-domain-event-report";
 const DOMAIN_LOCALIZED_CONTENT_BUNDLE = "@libreoj/backend-domain-localized-content";
 const DOMAIN_PERMISSION_BUNDLE = "@libreoj/backend-domain-permission";
+const DOMAIN_GROUP_BUNDLE = "@libreoj/backend-domain-group";
 const BACKEND_PROBLEM_TYPE_REGISTRY_BUNDLE = "@libreoj/backend-problem-type-registry";
 const DOMAIN_PROBLEM_TYPE_BUNDLE = "@libreoj/backend-domain-problem-type";
 
@@ -196,6 +198,7 @@ async function bootstrap() {
       [DOMAIN_EVENT_REPORT_BUNDLE]: eventReportPlugin,
       [DOMAIN_LOCALIZED_CONTENT_BUNDLE]: localizedContentPlugin,
       [DOMAIN_PERMISSION_BUNDLE]: permissionPlugin,
+      [DOMAIN_GROUP_BUNDLE]: groupPlugin,
       [BACKEND_PROBLEM_TYPE_REGISTRY_BUNDLE]: problemTypeRegistryPlugin,
       [DOMAIN_PROBLEM_TYPE_BUNDLE]: problemTypePlugin,
       [BACKEND_INFRA_BUNDLE]: infraPlugin,

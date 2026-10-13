@@ -13,7 +13,6 @@ import { RedisModule } from "./redis/redis.module";
 import { DatabaseModule } from "./database/database.module";
 import { UserModule } from "./user/user.module";
 import { AuthModule } from "./auth/auth.module";
-import { GroupModule } from "./group/group.module";
 import { ProblemModule } from "./problem/problem.module";
 import { SubmissionModule } from "./submission/submission.module";
 import { HackModule } from "./hack/hack.module";
@@ -29,7 +28,6 @@ import { MigrationModule } from "./migration/migration.module";
     forwardRef(() => RedisModule),
     forwardRef(() => UserModule),
     forwardRef(() => AuthModule),
-    forwardRef(() => GroupModule),
     forwardRef(() => ProblemModule),
     forwardRef(() => SubmissionModule),
     forwardRef(() => HackModule),
