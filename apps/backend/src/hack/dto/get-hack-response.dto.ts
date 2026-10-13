@@ -16,4 +16,7 @@ export class GetHackResponseDto {
 
   @ApiProperty()
   inputUrl?: string;
+
+  @ApiProperty()
+  details?: unknown;
 }

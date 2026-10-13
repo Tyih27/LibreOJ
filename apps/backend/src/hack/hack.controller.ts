@@ -15,6 +15,7 @@ import {
 
 import { CurrentUser } from "../common/user.decorator";
 import { UserEntity } from "../user/user.entity";
+import { UserPrivilegeService, UserPrivilegeType } from "../user/user-privilege.service";
 import { ProblemService, ProblemPermissionType } from "../problem/problem.service";
 import { AuditLogObjectType, AuditService } from "../audit/audit.service";
 
@@ -24,7 +25,8 @@ export class HackController {
   constructor(
     private readonly hackService: HackService,
     private readonly problemService: ProblemService,
-    private readonly auditService: AuditService
+    private readonly auditService: AuditService,
+    private readonly userPrivilegeService: UserPrivilegeService
   ) {}
 
   @Post("createHack")
@@ -97,15 +99,19 @@ export class HackController {
         error: "PERMISSION_DENIED"
       };
 
-    // A problem-scoped query needs read access to that problem; otherwise only the current user's own hacks may be
-    // listed (never a global dump).
+    // A problem-scoped query needs read access to that problem. Otherwise the query is allowed when it targets the
+    // current user's own hacks (as hacker or owner) or when the user may manage problems.
     if (request.problemId) {
       const problem = await this.problemService.findProblemById(request.problemId);
       if (!problem || !(await this.problemService.userHasPermission(currentUser, problem, ProblemPermissionType.View)))
         return {
           error: "PERMISSION_DENIED"
         };
-    } else if (request.hackerId !== currentUser.id) {
+    } else if (
+      request.hackerId !== currentUser.id &&
+      request.ownerId !== currentUser.id &&
+      !(await this.userPrivilegeService.userHasPrivilege(currentUser, UserPrivilegeType.ManageProblem))
+    ) {
       return {
         error: "PERMISSION_DENIED"
       };
@@ -115,10 +121,12 @@ export class HackController {
       request.problemId,
       request.hackerId,
       request.submissionId,
+      request.ownerId,
+      request.status,
       request.takeCount
     );
     return {
-      hacks: hacks.map(hack => this.hackService.getHackMeta(hack))
+      hacks: await Promise.all(hacks.map(hack => this.hackService.getHackMetaWithRelations(hack, currentUser)))
     };
   }
 
@@ -144,8 +152,9 @@ export class HackController {
       };
 
     return {
-      meta: this.hackService.getHackMeta(hack),
-      inputUrl: await this.hackService.getHackInputUrl(hack)
+      meta: await this.hackService.getHackMetaWithRelations(hack, currentUser),
+      inputUrl: await this.hackService.getHackInputUrl(hack),
+      details: hack.details ?? null
     };
   }
 }

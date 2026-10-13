@@ -33,6 +33,11 @@ export class HackEntity {
   @Index()
   hackerId: number;
 
+  // The submitter of the hacked submission. Nullable only for rows created before this column existed.
+  @Column({ nullable: true })
+  @Index()
+  ownerId: number;
+
   // The uuid of the FileEntity holding the hacker-provided input
   @Column({ type: "char", length: 36 })
   inputUuid: string;

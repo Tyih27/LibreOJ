@@ -32,6 +32,10 @@ export const setProblemPublic = createPostApi<
   ApiTypes.SetProblemPublicRequestDto,
   ApiTypes.SetProblemPublicResponseDto
 >("problem/setProblemPublic", false);
+export const setProblemHackable = createPostApi<
+  ApiTypes.SetProblemHackableRequestDto,
+  ApiTypes.SetProblemHackableResponseDto
+>("problem/setProblemHackable", false);
 export const addProblemFile = createPostApi<ApiTypes.AddProblemFileRequestDto, ApiTypes.AddProblemFileResponseDto>(
   "problem/addProblemFile",
   true

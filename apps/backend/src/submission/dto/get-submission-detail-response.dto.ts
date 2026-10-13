@@ -37,4 +37,7 @@ export class GetSubmissionDetailResponseDto {
 
   @ApiProperty()
   permissionDelete?: boolean;
+
+  @ApiProperty()
+  permissionHack?: boolean;
 }

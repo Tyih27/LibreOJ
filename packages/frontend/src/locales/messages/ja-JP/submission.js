@@ -21,6 +21,40 @@ return {
     NO_SUCH_SUBMISSION: "提出が存在しません。",
     PERMISSION_DENIED: "権限がありません。"
   },
+  hack: {
+    button: "Hack",
+    title: "この提出を Hack する",
+    explanation:
+      "この満点の提出が失敗すると思う入力データをアップロードしてください。このデータで満点を取れなければ Hack 成功です。",
+    file_label: "Hack の入力データ",
+    cancel: "中止",
+    confirm: "Hack を送信",
+    success_create: "Hack を送信しました。",
+    upload_cancelled: "アップロードを中止しました。",
+    upload_error: "ファイルのアップロードに失敗しました：{error}",
+    list_title: "Hack 一覧",
+    columns: {
+      id: "ID",
+      hacker: "Hack したユーザー",
+      submit_time: "提出日時",
+      status: "状態"
+    },
+    status: {
+      judging: "ジャッジ中",
+      hacked: "Hack 成功",
+      failed: "Hack 失敗"
+    },
+    error: {
+      NO_SUCH_PROBLEM: "問題が存在しません。",
+      PROBLEM_NOT_HACKABLE: "[TBT] This problem is not hackable.",
+      NO_SUCH_SUBMISSION: "提出が存在しません。",
+      SUBMISSION_NOT_ACCEPTED: "[TBT] This submission is not accepted.",
+      PERMISSION_DENIED: "権限がありません。",
+      FILE_TOO_LARGE: "[TBT] The file is too large.",
+      FILE_UUID_EXISTS: "[TBT] The file already exists.",
+      FILE_NOT_UPLOADED: "[TBT] The file was not uploaded."
+    }
+  },
   failed_to_format: "コードのフォーマットに失敗しました：{error}",
   format_code: "コードをフォーマットする",
   show_original_code: "オリジナルを表示",

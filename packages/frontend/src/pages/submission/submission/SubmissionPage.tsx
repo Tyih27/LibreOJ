@@ -1,5 +1,19 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { Table, Icon, Accordion, Grid, SemanticWIDTHS, Button, Popup, Ref, Menu } from "semantic-ui-react";
+import {
+  Table,
+  Icon,
+  Accordion,
+  Grid,
+  SemanticWIDTHS,
+  Button,
+  Popup,
+  Ref,
+  Menu,
+  Segment,
+  Header,
+  Form,
+  Progress
+} from "semantic-ui-react";
 import { observer } from "mobx-react";
 import { v4 as uuid } from "uuid";
 import { patch } from "jsondiffpatch";
@@ -9,7 +23,10 @@ import style from "./SubmissionPage.module.less";
 import { appState } from "@/appState";
 import api from "@/api";
 import toast from "@/utils/toast";
-import { useLocalizer, useSocket, useScreenWidthWithin, useNavigationChecked } from "@/utils/hooks";
+import { useLocalizer, useSocket, useScreenWidthWithin, useNavigationChecked, useDialog, Link } from "@/utils/hooks";
+import UserLink from "@/components/UserLink";
+import { friendlyFormatDateTime } from "@/utils/formatDateTime";
+import { callApiWithFileUpload } from "@/utils/callApiWithFileUpload";
 import { SubmissionHeader, SubmissionItem, SubmissionItemExtraRows } from "../componments/SubmissionItem";
 import StatusText from "@/components/StatusText";
 import formatFileSize from "@/utils/formatFileSize";
@@ -199,6 +216,7 @@ interface SubmissionPageProps {
   permissionCancel: boolean;
   permissionSetPublic: boolean;
   permissionDelete: boolean;
+  permissionHack: boolean;
   ProblemTypeSubmissionView: ProblemTypeSubmissionView;
 }
 
@@ -889,9 +907,107 @@ let SubmissionPage: React.FC<SubmissionPageProps> = props => {
   const showCancel = props.permissionCancel && progressMeta.pending;
   const showTogglePublic = props.permissionSetPublic;
   const showDelete = props.permissionDelete;
+  const showHack =
+    props.permissionHack && props.meta.problem.hackable && props.meta.status === "Accepted" && props.meta.score === 100;
+
+  const [hacks, setHacks] = useState<ApiTypes.HackMetaDto[]>([]);
+  const [hackFile, setHackFile] = useState<File>(null);
+  const [hackPending, setHackPending] = useState(false);
+  const [hackProgress, setHackProgress] = useState<number>(null);
+
+  async function fetchHacks() {
+    const { requestError, response } = await api.hack.queryHacks({
+      problemId: props.meta.problem.id,
+      submissionId: props.meta.id
+    });
+    if (requestError || response.error) return;
+    setHacks(response.hacks || []);
+  }
+
+  useEffect(() => {
+    fetchHacks();
+  }, []);
+
+  function hackStatusText(success?: number) {
+    if (success == null) return _(".hack.status.judging");
+    if (success === 1) return _(".hack.status.hacked");
+    return _(".hack.status.failed");
+  }
+
+  async function onCreateHack() {
+    if (hackPending || !hackFile) return;
+    setHackPending(true);
+    setHackProgress(0);
+
+    const result: {
+      uploadCancelled?: boolean;
+      uploadError?: any;
+      requestError?: any;
+      response?: ApiTypes.CreateHackResponseDto;
+    } = await callApiWithFileUpload(
+      api.hack.createHack as any,
+      {
+        problemId: props.meta.problem.id,
+        submissionId: props.meta.id
+      },
+      async () => "",
+      hackFile,
+      progress => setHackProgress(progress.status === "Uploading" ? progress.progress : null)
+    );
+
+    if (result.uploadCancelled) {
+      toast.error(_(".hack.upload_cancelled"));
+    } else if (result.uploadError) {
+      toast.error(_(".hack.upload_error", { error: String(result.uploadError) }));
+    } else if (result.requestError) {
+      toast.error(result.requestError(_));
+    } else if (result.response) {
+      if (result.response.error) {
+        toast.error(_(`.hack.error.${String(result.response.error)}`));
+      } else {
+        toast.success(_(".hack.success_create"));
+        hackDialog.close();
+        await fetchHacks();
+        navigation.navigate(`/h/${result.response.hackId}`);
+      }
+    }
+
+    setHackPending(false);
+    setHackProgress(null);
+  }
+
+  const hackDialog = useDialog(
+    {},
+    () => _(".hack.title"),
+    () => (
+      <>
+        <p>{_(".hack.explanation")}</p>
+        <Form>
+          <Form.Input
+            type="file"
+            label={_(".hack.file_label")}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHackFile(e.target.files[0] || null)}
+          />
+        </Form>
+        {hackProgress != null && <Progress percent={Math.round(hackProgress * 100)} indicating progress />}
+      </>
+    ),
+    () => (
+      <>
+        <Button content={_(".hack.cancel")} disabled={hackPending} onClick={() => hackDialog.close()} />
+        <Button
+          positive
+          content={_(".hack.confirm")}
+          disabled={!hackFile}
+          loading={hackPending}
+          onClick={onCreateHack}
+        />
+      </>
+    )
+  );
 
   const statusPopup = (statusNode: JSX.Element) =>
-    !showRejudge && !showCancel ? (
+    !showRejudge && !showCancel && !showHack ? (
       statusNode
     ) : (
       <>
@@ -926,6 +1042,17 @@ let SubmissionPage: React.FC<SubmissionPageProps> = props => {
                       </>
                     }
                     onClick={() => (setOperationsPopupOpen(false), setRejudgePopupOpen(true))}
+                  />
+                )}
+                {showHack && (
+                  <Menu.Item
+                    content={
+                      <>
+                        <Icon name="crosshairs" />
+                        {_(".hack.button")}
+                      </>
+                    }
+                    onClick={() => (setOperationsPopupOpen(false), hackDialog.open())}
                   />
                 )}
                 {showTogglePublic && (
@@ -1004,6 +1131,7 @@ let SubmissionPage: React.FC<SubmissionPageProps> = props => {
 
   return (
     <>
+      {hackDialog.element}
       {!isMobile && (
         <Table textAlign="center" basic="very" unstackable fixed={isWideScreen} compact={isWideScreen ? false : "very"}>
           <Table.Header>
@@ -1058,6 +1186,38 @@ let SubmissionPage: React.FC<SubmissionPageProps> = props => {
         getSubtasksView={getSubtasksView}
         refDefaultCopyCodeBox={refDefaultCopyCodeBox}
       />
+      {hacks.length > 0 && (
+        <Segment>
+          <Header size="medium">{_(".hack.list_title")}</Header>
+          <Table textAlign="center" basic="very" unstackable>
+            <Table.Header>
+              <Table.Row>
+                <Table.HeaderCell textAlign="left">{_(".hack.columns.id")}</Table.HeaderCell>
+                <Table.HeaderCell textAlign="left">{_(".hack.columns.hacker")}</Table.HeaderCell>
+                <Table.HeaderCell textAlign="left">{_(".hack.columns.submit_time")}</Table.HeaderCell>
+                <Table.HeaderCell textAlign="left">{_(".hack.columns.status")}</Table.HeaderCell>
+              </Table.Row>
+            </Table.Header>
+            <Table.Body>
+              {hacks.map(hack => {
+                const timeString = friendlyFormatDateTime(hack.submitTime);
+                return (
+                  <Table.Row key={hack.id}>
+                    <Table.Cell textAlign="left">
+                      <Link href={`/h/${hack.id}`}>#{hack.id}</Link>
+                    </Table.Cell>
+                    <Table.Cell textAlign="left">{hack.hacker && <UserLink user={hack.hacker} />}</Table.Cell>
+                    <Table.Cell textAlign="left" title={timeString[1] as string}>
+                      {timeString[0]}
+                    </Table.Cell>
+                    <Table.Cell textAlign="left">{hackStatusText(hack.success)}</Table.Cell>
+                  </Table.Row>
+                );
+              })}
+            </Table.Body>
+          </Table>
+        </Segment>
+      )}
     </>
   );
 };

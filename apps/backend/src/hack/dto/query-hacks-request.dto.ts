@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 
-import { IsInt, IsOptional } from "class-validator";
+import { IsIn, IsInt, IsOptional } from "class-validator";
 
 export class QueryHacksRequestDto {
   @ApiProperty()
@@ -16,7 +16,17 @@ export class QueryHacksRequestDto {
   @ApiProperty()
   @IsOptional()
   @IsInt()
+  readonly ownerId?: number;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsInt()
   readonly submissionId?: number;
+
+  @ApiProperty()
+  @IsOptional()
+  @IsIn(["pending", "success", "fail"])
+  readonly status?: "pending" | "success" | "fail";
 
   @ApiProperty()
   @IsOptional()

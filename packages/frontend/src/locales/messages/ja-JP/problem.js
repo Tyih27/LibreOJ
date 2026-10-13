@@ -20,6 +20,10 @@ return {
     submissions: "提出",
     accepted: "正解"
   },
+  hacks: {
+    title: "[TBT] Hacks",
+    view_all: "[TBT] View all"
+  },
   action: {
     submit: "提出",
     login_to_submit: "ログインして提出してください",

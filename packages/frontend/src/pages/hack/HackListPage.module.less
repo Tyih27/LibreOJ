@@ -1,0 +1,34 @@
+.queryForm {
+  margin-bottom: 30px;
+}
+
+.queryInputProblemId input {
+  width: 120px !important;
+}
+
+.queryInputSubmissionId input {
+  width: 130px !important;
+}
+
+.queryInputStatus div[role=listbox] {
+  width: 130px !important;
+}
+
+// If the current value is "all", display it like a placeholder
+.selectedAll div[role=listbox]:not(:global(.active)) > :global(.text) > span {
+  color: rgba(191, 191, 191, 0.87);
+}
+
+.quickLinkFirst {
+  margin-left: auto !important;
+}
+
+.table {
+  margin-bottom: -10px !important;
+}
+
+@media only screen and (max-width: 767px) {
+  .queryForm {
+    margin-bottom: 15px;
+  }
+}

@@ -829,6 +829,17 @@ export class SubmissionService implements JudgeTaskService<SubmissionProgress, S
     });
   }
 
+  async hasFullScoreAcceptedSubmission(submitterId: number, problemId: number): Promise<boolean> {
+    return (
+      (await this.submissionRepository.countBy({
+        submitterId,
+        problemId,
+        status: SubmissionStatus.Accepted,
+        score: 100
+      })) > 0
+    );
+  }
+
   async getUserLatestSubmissionByProblems(
     user: UserEntity,
     problems: ProblemEntity[],

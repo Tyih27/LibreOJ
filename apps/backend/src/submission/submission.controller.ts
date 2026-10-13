@@ -54,6 +54,7 @@ import { ProblemEntity } from "../problem/problem.entity";
 import { AuditLogObjectType, AuditService } from "../audit/audit.service";
 import { MinioSignFor, FileService } from "../file/file.service";
 import { ProblemTypeFactoryService } from "../problem-type/problem-type-factory.service";
+import { hasHackPermission } from "../hack/hack-policy";
 
 @ApiTags("Submission")
 @Controller("submission")
@@ -277,7 +278,8 @@ export class SubmissionController {
       permissionRejudge,
       permissionCancel,
       permissionSetPublic,
-      permissionDelete
+      permissionDelete,
+      hasFullScoreAcceptedSubmission
     ] = await Promise.all([
       this.userService.findUserById(submission.submitterId),
       this.submissionService.getSubmissionDetail(submission),
@@ -309,8 +311,11 @@ export class SubmissionController {
         SubmissionPermissionType.Delete,
         problem,
         hasPrivilege
-      )
+      ),
+      currentUser != null && this.submissionService.hasFullScoreAcceptedSubmission(currentUser.id, submission.problemId)
     ]);
+
+    const permissionHack = hasHackPermission(currentUser?.isAdmin, hasFullScoreAcceptedSubmission);
 
     return {
       meta: {
@@ -338,7 +343,8 @@ export class SubmissionController {
       permissionRejudge,
       permissionCancel,
       permissionSetPublic,
-      permissionDelete
+      permissionDelete,
+      permissionHack
     };
   }
 

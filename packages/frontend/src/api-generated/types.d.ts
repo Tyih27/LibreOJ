@@ -75,6 +75,16 @@ declare namespace ApiTypes {
     error?: "PERMISSION_DENIED" | "DUPLICATE_GROUP_NAME";
     groupId?: number;
   }
+  export interface CreateHackRequestDto {
+    problemId: number;
+    submissionId: number;
+    uploadInfo: ApiTypes.FileUploadInfoDto;
+  }
+  export interface CreateHackResponseDto {
+    error?: {};
+    hackId?: number;
+    signedUploadRequest?: ApiTypes.SignedFileUploadRequestDto;
+  }
   export interface CreateProblemRequestDto {
     type: "Traditional" | "Interaction" | "SubmitAnswer";
     statement: ApiTypes.ProblemStatementDto;
@@ -298,6 +308,15 @@ declare namespace ApiTypes {
     error?: "NO_SUCH_GROUP";
     groupMeta?: ApiTypes.GroupMetaDto;
   }
+  export interface GetHackRequestDto {
+    hackId: number;
+  }
+  export interface GetHackResponseDto {
+    error?: "NO_SUCH_HACK" | "PERMISSION_DENIED";
+    meta?: ApiTypes.HackMetaDto;
+    inputUrl?: string;
+    details?: {};
+  }
   export interface GetHomepageResponseDto {
     notice: string;
     noticeLocale: "en_US" | "zh_CN" | "ja_JP";
@@ -396,6 +415,7 @@ declare namespace ApiTypes {
     permissionCancel?: boolean;
     permissionSetPublic?: boolean;
     permissionDelete?: boolean;
+    permissionHack?: boolean;
   }
   export interface GetUserDetailRequestDto {
     userId?: number;
@@ -471,6 +491,21 @@ declare namespace ApiTypes {
     id: number;
     name: string;
     memberCount: number;
+  }
+  export interface HackMetaDto {
+    id: number;
+    problemId: number;
+    submissionId: number;
+    hackerId: number;
+    ownerId: number;
+    inputUuid: string;
+    submitTime: string; // date-time
+    judgeTime: string; // date-time
+    success?: number;
+    hacker?: ApiTypes.UserMetaDto;
+    owner?: ApiTypes.UserMetaDto;
+    problem?: ApiTypes.ProblemMetaDto;
+    problemTitle?: string;
   }
   export interface HeaderParameters {
     "maintaince-key": ApiTypes.Parameters.MaintainceKey;
@@ -664,6 +699,7 @@ declare namespace ApiTypes {
     displayId?: number;
     type: "Traditional" | "Interaction" | "SubmitAnswer";
     isPublic: boolean;
+    hackable: boolean;
     publicTime: string; // date-time
     ownerId: number;
     locales: ("en_US" | "zh_CN" | "ja_JP")[];
@@ -721,10 +757,26 @@ declare namespace ApiTypes {
     ipLocation: string;
     time: string; // date-time
     action: string;
-    firstObjectType?: "User" | "Group" | "Problem" | "ProblemTag" | "Submission" | "Discussion" | "DiscussionReply";
+    firstObjectType?:
+      | "User"
+      | "Group"
+      | "Problem"
+      | "ProblemTag"
+      | "Submission"
+      | "Hack"
+      | "Discussion"
+      | "DiscussionReply";
     firstObjectId?: number;
     firstObject?: {};
-    secondObjectType?: "User" | "Group" | "Problem" | "ProblemTag" | "Submission" | "Discussion" | "DiscussionReply";
+    secondObjectType?:
+      | "User"
+      | "Group"
+      | "Problem"
+      | "ProblemTag"
+      | "Submission"
+      | "Hack"
+      | "Discussion"
+      | "DiscussionReply";
     secondObjectId?: number;
     secondObject?: {};
     details?: {};
@@ -766,6 +818,18 @@ declare namespace ApiTypes {
     meta: ApiTypes.ProblemMetaDto;
     title: string;
     titleLocale: "en_US" | "zh_CN" | "ja_JP";
+  }
+  export interface QueryHacksRequestDto {
+    problemId?: number;
+    hackerId?: number;
+    ownerId?: number;
+    submissionId?: number;
+    status?: "pending" | "success" | "fail";
+    takeCount?: number;
+  }
+  export interface QueryHacksResponseDto {
+    hacks?: ApiTypes.HackMetaDto[];
+    error?: string;
   }
   export interface QueryParameters {
     locale: ApiTypes.Parameters.Locale;
@@ -1016,6 +1080,13 @@ declare namespace ApiTypes {
   }
   export interface SetProblemDisplayIdResponseDto {
     error?: "PERMISSION_DENIED" | "NO_SUCH_PROBLEM" | "DUPLICATE_DISPLAY_ID" | "PUBLIC_PROBLEM_MUST_HAVE_DISPLAY_ID";
+  }
+  export interface SetProblemHackableRequestDto {
+    problemId: number;
+    hackable: boolean;
+  }
+  export interface SetProblemHackableResponseDto {
+    error?: "PERMISSION_DENIED" | "NO_SUCH_PROBLEM";
   }
   export interface SetProblemPermissionsRequestDto {
     problemId: number;

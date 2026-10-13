@@ -758,6 +758,32 @@ let ProblemFilesPage: React.FC<ProblemFilesPageProps> = props => {
     transformResponseToFileTableItems(props.problem.additionalFiles)
   );
 
+  const [hackable, setHackable] = useState(props.problem.meta.hackable);
+  const [hackablePending, setHackablePending] = useState(false);
+
+  async function onToggleHackable(next: boolean) {
+    if (hackablePending) return;
+    setHackablePending(true);
+    setHackable(next);
+
+    const { requestError, response } = await api.problem.setProblemHackable({
+      problemId: props.problem.meta.id,
+      hackable: next
+    });
+
+    if (requestError) {
+      setHackable(!next);
+      toast.error(requestError(_));
+    } else if (response.error) {
+      setHackable(!next);
+      toast.error(_(`.error.${response.error}`));
+    } else {
+      toast.success(_(".set_hackable_success"));
+    }
+
+    setHackablePending(false);
+  }
+
   async function onRenameFile(
     type: "TestData" | "AdditionalFile",
     setFileList: typeof setFileListTestData,
@@ -1064,6 +1090,18 @@ let ProblemFilesPage: React.FC<ProblemFilesPageProps> = props => {
 
   return (
     <>
+      {props.problem.permissionOfCurrentUser.includes("Modify") && (
+        <Form>
+          <Form.Checkbox
+            toggle
+            label={_(".hackable")}
+            checked={hackable}
+            disabled={hackablePending}
+            onChange={(e, { checked }) => onToggleHackable(checked)}
+          />
+          <p>{_(".hackable_description")}</p>
+        </Form>
+      )}
       <Grid>
         {isWideScreen ? (
           <>

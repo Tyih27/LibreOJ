@@ -20,6 +20,10 @@ return {
     submissions: "Subs.",
     accepted: "AC."
   },
+  hacks: {
+    title: "Hacks",
+    view_all: "View all"
+  },
   action: {
     submit: "Submit",
     login_to_submit: "Login to submit",

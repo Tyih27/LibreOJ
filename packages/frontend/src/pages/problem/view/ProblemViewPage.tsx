@@ -13,7 +13,8 @@ import {
   Button,
   Form,
   Message,
-  Loader
+  Loader,
+  Table
 } from "semantic-ui-react";
 import { observer } from "mobx-react";
 import update from "immutability-helper";
@@ -53,6 +54,8 @@ import { onEnterPress } from "@/utils/onEnterPress";
 import { downloadProblemFile, downloadProblemFilesAsArchive } from "../files/ProblemFilesPage";
 import { makeToBeLocalizedText } from "@/locales";
 import { EmojiRenderer } from "@/components/EmojiRenderer";
+import UserLink from "@/components/UserLink";
+import { friendlyFormatDateTime } from "@/utils/formatDateTime";
 
 export function useProblemViewMarkdownContentPatcher(problemId: number): MarkdownContentPatcher {
   const _ = useLocalizer();
@@ -122,6 +125,76 @@ async function fetchData(idType: "id" | "displayId", id: number, locale: Locale)
   sortTags(response.tagsOfLocale);
   return response;
 }
+
+let ProblemHacksSection: React.FC<{ problemId: number }> = props => {
+  const _ = useLocalizer("problem");
+
+  const [hacks, setHacks] = useState<ApiTypes.HackMetaDto[]>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    (async () => {
+      const { requestError, response } = await api.hack.queryHacks({ problemId: props.problemId });
+      if (disposed || requestError || response.error) return;
+      setHacks(response.hacks || []);
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, [props.problemId]);
+
+  if (!hacks || hacks.length === 0) return null;
+
+  function statusText(success?: number) {
+    if (success == null) return _("hack.status.judging");
+    if (success === 1) return _("hack.status.hacked");
+    return _("hack.status.failed");
+  }
+
+  return (
+    <Segment>
+      <Header size="medium">
+        {_(".hacks.title")}
+        <Button
+          floated="right"
+          size="small"
+          as={Link}
+          href={{ pathname: "/hacks", query: { problemId: props.problemId.toString() } }}
+          content={_(".hacks.view_all")}
+        />
+      </Header>
+      <Table textAlign="center" basic="very" unstackable>
+        <Table.Header>
+          <Table.Row>
+            <Table.HeaderCell textAlign="left">{_("hack.columns.id")}</Table.HeaderCell>
+            <Table.HeaderCell textAlign="left">{_("hack.columns.hacker")}</Table.HeaderCell>
+            <Table.HeaderCell textAlign="left">{_("hack.columns.submit_time")}</Table.HeaderCell>
+            <Table.HeaderCell textAlign="left">{_("hack.columns.status")}</Table.HeaderCell>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {hacks.map(hack => {
+            const timeString = friendlyFormatDateTime(hack.submitTime);
+            return (
+              <Table.Row key={hack.id}>
+                <Table.Cell textAlign="left">
+                  <Link href={`/h/${hack.id}`}>#{hack.id}</Link>
+                </Table.Cell>
+                <Table.Cell textAlign="left">{hack.hacker && <UserLink user={hack.hacker} />}</Table.Cell>
+                <Table.Cell textAlign="left" title={timeString[1] as string}>
+                  {timeString[0]}
+                </Table.Cell>
+                <Table.Cell textAlign="left">{statusText(hack.success)}</Table.Cell>
+              </Table.Row>
+            );
+          })}
+        </Table.Body>
+      </Table>
+    </Segment>
+  );
+};
+
+ProblemHacksSection = observer(ProblemHacksSection);
 
 interface ProblemViewPageProps {
   idType: "id" | "displayId";
@@ -796,6 +869,7 @@ let ProblemViewPage: React.FC<ProblemViewPageProps> = props => {
           </div>
         </div>
       </div>
+      {!inSubmitView && <ProblemHacksSection problemId={props.problem.meta.id} />}
     </>
   );
 };

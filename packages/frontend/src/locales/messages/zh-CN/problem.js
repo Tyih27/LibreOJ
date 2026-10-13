@@ -20,6 +20,10 @@ return {
     submissions: "提交",
     accepted: "通过"
   },
+  hacks: {
+    title: "Hack",
+    view_all: "查看全部"
+  },
   action: {
     submit: "提交",
     login_to_submit: "请登录后提交",

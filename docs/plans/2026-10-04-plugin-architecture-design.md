@@ -423,21 +423,28 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   权限=管理员或有该题 AC；输入复用 presigned 上传）；② judge `task/hack` **已完成**（下载 testdata+输入，编译 `val.cpp`/`std.cpp`/被 hack 提交，
   跑 val（非 0=无效输入）→ 跑 std 得答案 → 跑提交 → 用题目 checker 比对，`success = 分数!=100`；提交编译失败/RE/TLE/MLE/OLE 亦算成功；进度 `Running`/`Finished` 回写）。
   **U4-a 完成（提交 6f803beb + 本次）**。
-  **U4-b 已完成（额外测试闸门 + 成功追加 + 重判，与 UOJ 对齐；U4-c 前端随后）**：
+  **U4-b 已完成（额外测试闸门 + 成功追加 + 重判，与 UOJ 对齐）**：
   ① 判题补齐**额外测试闸门**——judgeInfo 新增 `extraTests`，由 `uoj-problem-conf` 按 testdata 中**实际存在**的 `ex_*` 对枚举（故 hack 追加的文件自动生效，无需改写 `problem.conf`）；
   traditional 判题在子任务全过后逐条跑额外测试，任一失败 → 最终状态取其失败态、分数 **97**（UOJ `100-3`），否则不变；结果经 `SubmissionProgress.extraTests` 回传并在提交页**单独一栏**展示。
   ② **成功追加 + 重判**——judge 成功时向后端 `requestUploadUrl` 取预签名 PUT（`JudgeUploadRequest`，避免新增 form-data 依赖），把 `std.cpp` 输出直传对象存储，并在 `Finished` 进度带 `stdOutputUuid`；
   后端 `HackService.onTaskProgress` 成功后 `processJudgeUploadedFile` 登记文件 → `ProblemService.appendHackExtraTest` 以 `ex_input<n>`（复用 `hack.inputUuid`）/`ex_output<n>`（新上传）写入 TestData 并清预处理缓存 → `SubmissionService.rejudgeProblemAcceptedSubmissions` 重测该题所有 `score=100` 提交 → 审计 `hack.apply_extra_test`。仅含 `problem.conf` 的题可追加（余者仅告警），与 UOJ `dataAddExtraTest` 一致。
   语义：`hack.success=1` ⟺ 被 hack 提交在 hack 输入上判错（hack 成功）。**无法本机端到端验证**（编译 std/val 需编译器 rootfs）。
+  **U4-c 已完成（前端 hack 界面）**：
+  ① 后端补强——`HackEntity` 加 `ownerId`（被 hack 提交的提交者）；`queryHacks` 加 `ownerId` / `status` 过滤；`HackMetaDto` 扩充 `ownerId` + `hacker`/`owner`/`problem`/`problemTitle`（`getHackMetaWithRelations`）；`getHack` 暴露 `details`；提交详情加 `permissionHack`；修正 `hack-meta.dto.ts` 里**写反的 `success` 注释**。全局列出权限：按题需 View，否则限本人（hacker/owner）或有 `ManageProblem` 权限。
+  ② **重新生成前端 API 客户端**（起 dev 容器 + 后端 → `generate-api`），新增 `api.hack.*`、`problem.setProblemHackable`、`problem.meta.hackable`、`permissionHack`。
+  ③ 前端——提交页「Hack」按钮 + 上传输入对话框（复用 `callApiWithFileUpload`）、该提交的 Hack 列表；独立 **Hack 详情页 `/h/:id`**（含元信息、输入下载、判题进度轮询、判题详情）；**全局 `/hacks` 页**（problemId/submissionId/status 过滤 + 「我发起的」/「针对我的」+ 非管理员无过滤时回退到本人）；题目页 Hack 列表；题目文件页 **hackable 开关**。文案 en-US/zh-CN/ja-JP（新 `hack` 命名空间）。
+  **已本机冒烟验证**：`hack/*` 与 `setProblemHackable` 路由可达、未登录返回 `PERMISSION_DENIED`/`NO_SUCH_HACK`；`getHack` 助手匿名（公开题）返回带 `hacker`/`owner`/`problem`/`problemTitle` 的富 meta；`ownerId` 列由 `synchronize` 建出。
 
 ### 15.6 明确不做 / 后置（本轮）
 - **第二套 judge**（UOJ 原版 judge / 协议级双 judge）：**不做**（用户已改选"补字段+解析"路线）。
 - `use_builtin_judger off`（自定义 judger 程序）：U1 不支持（本机 8 题均为 `on`），需要时再立项。
 - UOJ 交互题（`interaction_mode` + `interactor.cpp`）：本机数据无，暂不做。
 - **子目录类布局 / AdditionalFile 归档导入**：沿用 §14 的结论（文件名不能含 `/`；归档导入仅 TestData）。
+- Hack 全局列表**无分页**（最多 `MAX_QUERY_HACKS=100` 条）与**无按用户名筛选**（仅按 id/status）——需要时再补。
 
 ### 15.7 决策登记
 - **已定**：走"补字段 + UOJ importer + 移植 checker"（不做双 judge）；**19 个 checker 全部搬入**；`output_limit` 与 U2 一起做；**要做 hack**；**checker 表示法选 B**（`{type:"testlib", name}`）。
 - **待定**：`use_builtin_judger off` 是否支持。
 - **已定（U4-b）**：额外测试作为**闸门**参与判题，失败分数 **97**（UOJ 原样）；额外测试结果在提交页**单独一栏**展示；judge 成功后**向后端索取**上传地址再直传 std 输出。
+- **已定（U4-c）**：范围含**全局 `/hacks` 页**与题目页列表；Hack 详情页**展示判题详情**（故后端 `getHack` 暴露 `details`）；`hackable` 开关放在**题目文件页**。
 - **实施顺序**：U2 的 checker 契约（变体 B）是 U1 importer 的前置（importer 要产出 `{type:"testlib",name}`），故**先落 U2 的 checker 契约+19 个实现**，再做 U1 importer。

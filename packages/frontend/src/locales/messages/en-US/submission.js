@@ -21,6 +21,40 @@ return {
     NO_SUCH_SUBMISSION: "No such submission.",
     PERMISSION_DENIED: "Permission denied."
   },
+  hack: {
+    button: "Hack",
+    title: "Hack this submission",
+    explanation:
+      "Upload a test input on which you think this accepted submission fails. The hack succeeds if the submission does not get a full score on it.",
+    file_label: "Hack input data",
+    cancel: "Cancel",
+    confirm: "Submit hack",
+    success_create: "Hack submitted.",
+    upload_cancelled: "Upload cancelled.",
+    upload_error: "Failed to upload file: {error}",
+    list_title: "Hacks",
+    columns: {
+      id: "ID",
+      hacker: "Hacker",
+      submit_time: "Submit time",
+      status: "Status"
+    },
+    status: {
+      judging: "Judging",
+      hacked: "Hacked",
+      failed: "Failed"
+    },
+    error: {
+      NO_SUCH_PROBLEM: "No such problem.",
+      PROBLEM_NOT_HACKABLE: "This problem is not hackable.",
+      NO_SUCH_SUBMISSION: "No such submission.",
+      SUBMISSION_NOT_ACCEPTED: "This submission is not accepted.",
+      PERMISSION_DENIED: "Permission denied.",
+      FILE_TOO_LARGE: "The file is too large.",
+      FILE_UUID_EXISTS: "The file already exists.",
+      FILE_NOT_UPLOADED: "The file was not uploaded."
+    }
+  },
   failed_to_format: "Error formatting code: {error}",
   format_code: "Format code",
   show_original_code: "Show original code",

@@ -21,6 +21,39 @@ return {
     NO_SUCH_SUBMISSION: "无此提交记录。",
     PERMISSION_DENIED: "权限不足。"
   },
+  hack: {
+    button: "Hack",
+    title: "Hack 此提交记录",
+    explanation: "上传一份你认为该满分提交会出错的测试数据。若该提交在这份数据上不能获得满分，则 Hack 成功。",
+    file_label: "Hack 输入数据",
+    cancel: "取消",
+    confirm: "提交 Hack",
+    success_create: "Hack 已提交。",
+    upload_cancelled: "上传已取消。",
+    upload_error: "上传文件失败：{error}",
+    list_title: "Hack 记录",
+    columns: {
+      id: "ID",
+      hacker: "发起者",
+      submit_time: "提交时间",
+      status: "状态"
+    },
+    status: {
+      judging: "评测中",
+      hacked: "Hack 成功",
+      failed: "Hack 失败"
+    },
+    error: {
+      NO_SUCH_PROBLEM: "无此题目。",
+      PROBLEM_NOT_HACKABLE: "此题目不可被 Hack。",
+      NO_SUCH_SUBMISSION: "无此提交记录。",
+      SUBMISSION_NOT_ACCEPTED: "该提交记录未被接受。",
+      PERMISSION_DENIED: "权限不足。",
+      FILE_TOO_LARGE: "文件过大。",
+      FILE_UUID_EXISTS: "文件已存在。",
+      FILE_NOT_UPLOADED: "文件未上传。"
+    }
+  },
   failed_to_format: "格式化代码出错：{error}",
   format_code: "格式化代码",
   show_original_code: "显示原始代码",

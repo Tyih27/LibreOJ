@@ -30,6 +30,7 @@ import { FileEntity } from "../file/file.entity";
 import { FileUploadInfoDto, SignedFileUploadRequestDto } from "../file/dto";
 import { AuditLogObjectType, AuditService } from "../audit/audit.service";
 import { UserEntity } from "../user/user.entity";
+import { UserService } from "../user/user.service";
 import { ConfigService } from "../config/config.service";
 import { logger } from "../logger";
 
@@ -51,7 +52,8 @@ export class HackService implements JudgeTaskService<HackProgress, HackTaskExtra
     private readonly judgeQueueService: JudgeQueueService,
     private readonly fileService: FileService,
     private readonly configService: ConfigService,
-    private readonly auditService: AuditService
+    private readonly auditService: AuditService,
+    private readonly userService: UserService
   ) {
     this.judgeQueueService.registerTaskType(JudgeTaskType.Hack, this);
 
@@ -77,10 +79,30 @@ export class HackService implements JudgeTaskService<HackProgress, HackTaskExtra
       problemId: hack.problemId,
       submissionId: hack.submissionId,
       hackerId: hack.hackerId,
+      ownerId: hack.ownerId,
       inputUuid: hack.inputUuid,
       submitTime: hack.submitTime,
       judgeTime: hack.judgeTime,
       success: hack.success
+    };
+  }
+
+  async getHackMetaWithRelations(hack: HackEntity, currentUser: UserEntity): Promise<HackMetaDto> {
+    const problem = await this.problemService.findProblemById(hack.problemId);
+    const [hacker, owner] = await Promise.all([
+      this.userService.findUserById(hack.hackerId),
+      // `ownerId` is null only for rows created before the column existed.
+      hack.ownerId != null ? this.userService.findUserById(hack.ownerId) : null
+    ]);
+
+    return {
+      ...this.getHackMeta(hack),
+      hacker: hacker ? await this.userService.getUserMeta(hacker, currentUser) : null,
+      owner: owner ? await this.userService.getUserMeta(owner, currentUser) : null,
+      problem: problem ? await this.problemService.getProblemMeta(problem) : null,
+      problemTitle: problem
+        ? await this.problemService.getProblemLocalizedTitle(problem, problem.locales[0])
+        : `#${hack.problemId}`
     };
   }
 
@@ -96,12 +118,18 @@ export class HackService implements JudgeTaskService<HackProgress, HackTaskExtra
     problemId: number,
     hackerId: number,
     submissionId: number,
+    ownerId: number,
+    status: "pending" | "success" | "fail",
     takeCount: number
   ): Promise<HackEntity[]> {
     const queryBuilder = this.hackRepository.createQueryBuilder();
     if (problemId) queryBuilder.andWhere("problemId = :problemId", { problemId });
     if (hackerId) queryBuilder.andWhere("hackerId = :hackerId", { hackerId });
     if (submissionId) queryBuilder.andWhere("submissionId = :submissionId", { submissionId });
+    if (ownerId) queryBuilder.andWhere("ownerId = :ownerId", { ownerId });
+    if (status === "pending") queryBuilder.andWhere("success IS NULL");
+    else if (status === "success") queryBuilder.andWhere("success = 1");
+    else if (status === "fail") queryBuilder.andWhere("success = 0");
     queryBuilder.orderBy("id", "DESC");
     queryBuilder.take(Math.min(takeCount || MAX_QUERY_HACKS, MAX_QUERY_HACKS));
     return await queryBuilder.getMany();
@@ -154,6 +182,7 @@ export class HackService implements JudgeTaskService<HackProgress, HackTaskExtra
       hack.problemId = problem.id;
       hack.submissionId = submission.id;
       hack.hackerId = hacker.id;
+      hack.ownerId = submission.submitterId;
       hack.inputUuid = result.uuid;
       hack.submitTime = new Date();
       hack.judgeTime = null;
