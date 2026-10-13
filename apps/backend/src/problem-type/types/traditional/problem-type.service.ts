@@ -75,6 +75,7 @@ export class ProblemTypeTraditionalService
       ...(result.memoryLimit !== undefined ? { memoryLimit: result.memoryLimit } : {}),
       ...(result.outputLimit !== undefined ? { outputLimit: result.outputLimit } : {}),
       ...(result.checker ? { checker: result.checker } : {}),
+      ...(result.extraTests ? { extraTests: result.extraTests } : {}),
       ...(result.extraSourceFiles ? { extraSourceFiles: result.extraSourceFiles } : {})
     };
   }
@@ -95,6 +96,17 @@ export class ProblemTypeTraditionalService
       testcaseLimit: ignoreLimits ? null : this.configService.config.resourceLimit.problemTestcases
     });
 
+    (judgeInfo.extraTests || []).forEach((extraTest, i) => {
+      if (!testData.some(file => file.filename === extraTest.inputFile)) {
+        // eslint-disable-next-line no-throw-literal
+        throw `Input file ${extraTest.inputFile} referenced by extra test ${i + 1} doesn't exist.`;
+      }
+      if (!testData.some(file => file.filename === extraTest.outputFile)) {
+        // eslint-disable-next-line no-throw-literal
+        throw `Output file ${extraTest.outputFile} referenced by extra test ${i + 1} doesn't exist.`;
+      }
+    });
+
     validateChecker(judgeInfo, testData, {
       validateCompileAndRunOptions: (language, compileAndRunOptions) =>
         this.codeLanguageService.validateCompileAndRunOptions(language, compileAndRunOptions).length === 0,
@@ -112,6 +124,7 @@ export class ProblemTypeTraditionalService
       "runSamples",
       "subtasks",
       "checker",
+      "extraTests",
       "extraSourceFiles"
     ]);
     restrictProperties(judgeInfo.fileIo, ["inputFilename", "outputFilename"]);
@@ -160,6 +173,16 @@ export class ProblemTypeTraditionalService
               submissionProgress.testcaseResult[testcase.testcaseHash].memory
             );
           }
+        }
+      }
+
+      if (Array.isArray(submissionProgress.extraTests)) {
+        for (const extraTest of submissionProgress.extraTests) {
+          if (!extraTest?.testcaseHash) continue;
+          const testcaseResult = submissionProgress.testcaseResult?.[extraTest.testcaseHash];
+          if (!testcaseResult) continue;
+          result.timeUsed += testcaseResult.time;
+          result.memoryUsed = Math.max(result.memoryUsed, testcaseResult.memory);
         }
       }
     }

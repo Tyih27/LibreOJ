@@ -14,7 +14,7 @@ import SocketIOParser from "socket.io-msgpack-parser";
 import { Redis } from "ioredis";
 import proxyAddr from "proxy-addr";
 
-import { JudgeClientSystemInfo, JudgeTaskMeta } from "@libreoj/judge-protocol";
+import { JudgeClientSystemInfo, JudgeTaskMeta, JudgeUploadRequest } from "@libreoj/judge-protocol";
 
 import { JudgeClientService } from "./judge-client.service";
 
@@ -243,6 +243,17 @@ export class JudgeGateway implements OnGatewayConnection, OnGatewayDisconnect {
           })
       )
     );
+  }
+
+  @SubscribeMessage("requestUploadUrl")
+  async onRequestUploadUrl(@ConnectedSocket() client: Socket): Promise<JudgeUploadRequest | null> {
+    const state = this.mapSessionIdToJudgeClient.get(client.id);
+    if (!state) {
+      logger.warn(`"requestUploadUrl" emitted from an unknown client ${client.id}, ignoring`);
+      return null;
+    }
+
+    return await this.fileService.createJudgeUploadRequest();
   }
 
   @SubscribeMessage("consumeTask")

@@ -10,11 +10,11 @@ import { JudgeInfoTraditional, SubmissionContentTraditional } from "../submissio
 
 import { Task } from "..";
 import { CompileResultSuccess } from "../../compile";
-import { getCompile, getFile, getSandbox, getTaskQueue } from "../../plugin/services";
+import { getCompile, getFile, getRpc, getSandbox, getTaskQueue } from "../../plugin/services";
 import { CpuAffinityStrategy, SANDBOX_INSIDE_PATH_BINARY, SANDBOX_INSIDE_PATH_WORKING } from "../../sandbox";
 import getLanguage from "../../languages";
 import { serverSideConfig } from "../../config";
-import { safelyJoinPath, MappedPath } from "../../utils";
+import { safelyJoinPath, MappedPath, upload } from "../../utils";
 import * as fsNative from "../../fsNative";
 import { OmittableString, isOmittableString, prependOmittableString, readFileOmitted } from "../../omittableString";
 import { ConfigurationError, CanceledError } from "../../error";
@@ -103,6 +103,8 @@ export interface HackProgress {
   /** Only valid when finished. */
   success?: boolean;
   details?: HackDetails;
+  /** Only present on a successful finished update: the uuid of the uploaded standard output. */
+  stdOutputUuid?: string;
 }
 
 type HackTask = Task<HackTaskExtraInfo, HackProgress>;
@@ -191,11 +193,30 @@ async function runProgram(options: {
 }
 
 /**
+ * Uploads the standard program's output best-effort. Never throws: a failed upload must not change the hack's success.
+ *
+ * @return The uploaded file's uuid, or `null` if the server offered no upload target or the upload failed.
+ */
+async function uploadStdOutput(stdOutputPath: string): Promise<string | null> {
+  try {
+    const request = await getRpc().requestUploadUrl();
+    if (!request) return null;
+
+    await upload(request.url, stdOutputPath, "hack standard output");
+    return request.uuid;
+  } catch (e) {
+    winston.warn(`Failed to upload hack standard output: ${e}`);
+    return null;
+  }
+}
+
+/**
  * Judges the hack on one task working directory: runs `val` on the hack input, runs `std` to produce the answer, runs
  * the hacked submission, and compares its output against the answer with the problem's checker.
  *
  * @returns The hack's `success`: a submission that does not pass on the hack input makes the hack succeed. A missing
- * or broken validator / standard program makes the hack invalid and therefore not successful.
+ * or broken validator / standard program makes the hack invalid and therefore not successful. On success, the
+ * uploaded standard output's uuid is returned when available.
  */
 async function judgeOnWorkingDirectory(options: {
   task: HackTask;
@@ -209,7 +230,7 @@ async function judgeOnWorkingDirectory(options: {
   customCheckerCompileResult: CompileResultSuccess;
   reportStage: (stage: string) => void;
   details: HackDetails;
-}): Promise<boolean> {
+}): Promise<{ success: boolean; stdOutputUuid?: string }> {
   const {
     task,
     taskWorkingDirectory,
@@ -258,7 +279,7 @@ async function judgeOnWorkingDirectory(options: {
   if (validatorRun.status !== SandboxStatus.OK) {
     details.validator = { passed: false, message: `Validator ${SandboxStatus[validatorRun.status]}` };
     details.reason = "ValidatorFailed";
-    return false;
+    return { success: false };
   }
   if (validatorRun.exitCode !== 0) {
     details.validator = {
@@ -266,7 +287,7 @@ async function judgeOnWorkingDirectory(options: {
       message: await readFileOmitted(validatorRun.stderrFile.outside, serverSideConfig.limit.stderrDisplay)
     };
     details.reason = "InvalidInput";
-    return false;
+    return { success: false };
   }
   details.validator = { passed: true };
 
@@ -285,7 +306,7 @@ async function judgeOnWorkingDirectory(options: {
       memory: standardRun.memory
     };
     details.reason = "StandardProgramFailed";
-    return false;
+    return { success: false };
   }
   details.standardProgram = { status: "OK", time: standardRun.time, memory: standardRun.memory };
 
@@ -326,7 +347,8 @@ async function judgeOnWorkingDirectory(options: {
 
   if (submissionStatus) {
     // The submission does not fulfill the problem on the hack input, so the hack succeeds.
-    return true;
+    const stdOutputUuid = await uploadStdOutput(standardRun.outputFile.outside);
+    return { success: true, stdOutputUuid };
   }
 
   // 4. Compare the submission's output against the answer with the problem's checker.
@@ -361,14 +383,16 @@ async function judgeOnWorkingDirectory(options: {
     details.checker = { message: checkerResult };
     details.submission.status = "JudgementFailed";
     details.reason = "CheckerFailed";
-    return true;
+    const stdOutputUuid = await uploadStdOutput(standardRun.outputFile.outside);
+    return { success: true, stdOutputUuid };
   }
 
   details.checker = { score: checkerResult.score, message: checkerResult.checkerMessage };
   if (checkerResult.score == null) {
     details.submission.status = "JudgementFailed";
     details.reason = "CheckerFailed";
-    return true;
+    const stdOutputUuid = await uploadStdOutput(standardRun.outputFile.outside);
+    return { success: true, stdOutputUuid };
   }
 
   if (checkerResult.score === 100) details.submission.status = "Accepted";
@@ -376,7 +400,9 @@ async function judgeOnWorkingDirectory(options: {
   else details.submission.status = "PartiallyCorrect";
 
   // The hack succeeds exactly when the hacked submission does not get a full score on the hack input.
-  return checkerResult.score !== 100;
+  const success = checkerResult.score !== 100;
+  const stdOutputUuid = success ? await uploadStdOutput(standardRun.outputFile.outside) : undefined;
+  return { success, stdOutputUuid };
 }
 
 export async function onHack(task: HackTask): Promise<void> {
@@ -388,13 +414,14 @@ export async function onHack(task: HackTask): Promise<void> {
   };
 
   let finished = false;
-  const finish = (success: boolean, finalDetails: HackDetails) => {
+  const finish = (success: boolean, finalDetails: HackDetails, stdOutputUuid?: string) => {
     if (finished) return;
     finished = true;
     task.reportProgressRaw({
       progressType: HackProgressType.Finished,
       success,
-      details: finalDetails
+      details: finalDetails,
+      ...(stdOutputUuid ? { stdOutputUuid } : {})
     });
   };
   const reportStage = (stage: string) => {
@@ -491,7 +518,7 @@ export async function onHack(task: HackTask): Promise<void> {
     disposables.push(submissionCompileResult);
 
     // 4. Run the validator, the standard program, the submission, and the checker on a task working directory.
-    const success = await getTaskQueue().runTaskQueued(taskWorkingDirectory =>
+    const result = await getTaskQueue().runTaskQueued(taskWorkingDirectory =>
       judgeOnWorkingDirectory({
         task,
         taskWorkingDirectory,
@@ -506,7 +533,7 @@ export async function onHack(task: HackTask): Promise<void> {
         details
       })
     );
-    finish(success, details);
+    finish(result.success, details, result.stdOutputUuid);
   } catch (e) {
     if (e instanceof CanceledError) throw e;
 

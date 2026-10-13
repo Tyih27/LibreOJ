@@ -9,6 +9,7 @@ import { HackController } from "./hack.controller";
 
 import { SubmissionEntity } from "../submission/submission.entity";
 import { SubmissionDetailEntity } from "../submission/submission-detail.entity";
+import { SubmissionModule } from "../submission/submission.module";
 import { ProblemModule } from "../problem/problem.module";
 import { JudgeModule } from "../judge/judge.module";
 import { FileModule } from "../file/file.module";
@@ -20,6 +21,7 @@ import { AuditModule } from "../audit/audit.module";
     TypeOrmModule.forFeature([SubmissionEntity]),
     TypeOrmModule.forFeature([SubmissionDetailEntity]),
     forwardRef(() => ProblemModule),
+    forwardRef(() => SubmissionModule),
     forwardRef(() => JudgeModule),
     forwardRef(() => FileModule),
     forwardRef(() => AuditModule)

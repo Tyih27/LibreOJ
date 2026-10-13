@@ -407,9 +407,10 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **目标**：建模 UOJ 的额外测试与样例：`ex_input1..M`（+ `ex_output1..M`），`M=n_ex_tests`；
   **前 `n_sample_tests` 个即样例**（约束 `n_sample_tests ≤ n_ex_tests`）。
 - U1 仅**识别/校验**这些文件存在；**语义（是否参与评分/校验、样例如何展示）留 U3** 单独定。
-  **已实现（U3）**：正常判题**只跑 `n_tests`**，`ex_*` **不参与评分**（UOJ 亦然），仅用于 (a) 样例、(b) hack。
-  U3 在**归档导入**时（仅当含 `problem.conf`）：把前 `n_sample_tests` 个 `ex_*` 的内容写为**题面样例**（覆盖；`buildUojSamples` 纯函数，真实数据已核对），
+  **已实现（U3）**：在**归档导入**时（仅当含 `problem.conf`）把前 `n_sample_tests` 个 `ex_*` 的内容写为**题面样例**（覆盖；`buildUojSamples` 纯函数，真实数据已核对），
   `ex_*` 文件仍作为 TestData 保留（= hack 数据）。非 UOJ 包不动样例；样例写入**非致命**（失败仅告警）。
+  **更正**：U3 曾记“`ex_*` 不参与评分（UOJ 亦然）”**有误**——UOJ `ordinary_test()` 在 `n_tests` 全过后会跑 `ex_*` 作为**闸门**，任一失败则
+  `tot_score = 100 - 3 = 97` 并立即结束（见 `uoj_judger/builtin/judger/judger.cpp`）。该闸门在 **U4-b** 补齐（见 15.5）。
   局限：样例仅在题面 section 引用时显示；题面导入不在本轮。
 
 ### 15.5 U4 — Hack（大功能，单独立项）
@@ -421,7 +422,12 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   `HackEntity`、`problem.hackable`（管理员端点 `problem/setProblemHackable`）、`HackService` 注册 hack 任务入 `judge-queue`、`hack/createHack|queryHacks|getHack`、
   权限=管理员或有该题 AC；输入复用 presigned 上传）；② judge `task/hack` **已完成**（下载 testdata+输入，编译 `val.cpp`/`std.cpp`/被 hack 提交，
   跑 val（非 0=无效输入）→ 跑 std 得答案 → 跑提交 → 用题目 checker 比对，`success = 分数!=100`；提交编译失败/RE/TLE/MLE/OLE 亦算成功；进度 `Running`/`Finished` 回写）。
-  **U4-a 完成（提交 6f803beb + 本次）**；U4-b（成功→追加额外测试+重判）、U4-c（前端）待做。
+  **U4-a 完成（提交 6f803beb + 本次）**。
+  **U4-b 已完成（额外测试闸门 + 成功追加 + 重判，与 UOJ 对齐；U4-c 前端随后）**：
+  ① 判题补齐**额外测试闸门**——judgeInfo 新增 `extraTests`，由 `uoj-problem-conf` 按 testdata 中**实际存在**的 `ex_*` 对枚举（故 hack 追加的文件自动生效，无需改写 `problem.conf`）；
+  traditional 判题在子任务全过后逐条跑额外测试，任一失败 → 最终状态取其失败态、分数 **97**（UOJ `100-3`），否则不变；结果经 `SubmissionProgress.extraTests` 回传并在提交页**单独一栏**展示。
+  ② **成功追加 + 重判**——judge 成功时向后端 `requestUploadUrl` 取预签名 PUT（`JudgeUploadRequest`，避免新增 form-data 依赖），把 `std.cpp` 输出直传对象存储，并在 `Finished` 进度带 `stdOutputUuid`；
+  后端 `HackService.onTaskProgress` 成功后 `processJudgeUploadedFile` 登记文件 → `ProblemService.appendHackExtraTest` 以 `ex_input<n>`（复用 `hack.inputUuid`）/`ex_output<n>`（新上传）写入 TestData 并清预处理缓存 → `SubmissionService.rejudgeProblemAcceptedSubmissions` 重测该题所有 `score=100` 提交 → 审计 `hack.apply_extra_test`。仅含 `problem.conf` 的题可追加（余者仅告警），与 UOJ `dataAddExtraTest` 一致。
   语义：`hack.success=1` ⟺ 被 hack 提交在 hack 输入上判错（hack 成功）。**无法本机端到端验证**（编译 std/val 需编译器 rootfs）。
 
 ### 15.6 明确不做 / 后置（本轮）
@@ -432,5 +438,6 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 
 ### 15.7 决策登记
 - **已定**：走"补字段 + UOJ importer + 移植 checker"（不做双 judge）；**19 个 checker 全部搬入**；`output_limit` 与 U2 一起做；**要做 hack**；**checker 表示法选 B**（`{type:"testlib", name}`）。
-- **待定**：`use_builtin_judger off` 是否支持；U3 额外测试/样例的具体语义。
+- **待定**：`use_builtin_judger off` 是否支持。
+- **已定（U4-b）**：额外测试作为**闸门**参与判题，失败分数 **97**（UOJ 原样）；额外测试结果在提交页**单独一栏**展示；judge 成功后**向后端索取**上传地址再直传 std 输出。
 - **实施顺序**：U2 的 checker 契约（变体 B）是 U1 importer 的前置（importer 要产出 `{type:"testlib",name}`），故**先落 U2 的 checker 契约+19 个实现**，再做 U1 importer。

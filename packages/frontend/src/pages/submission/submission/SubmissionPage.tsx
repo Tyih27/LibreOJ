@@ -68,6 +68,7 @@ export interface SubmissionProgress<TestcaseResult extends TestcaseResultCommon 
   // result
   testcaseResult?: Record<string, TestcaseResult>;
   samples?: TestcaseProgressReference[];
+  extraTests?: TestcaseProgressReference[];
   subtasks?: {
     score: number;
     fullScore: number;
@@ -156,10 +157,21 @@ function parseProgress<T extends TestcaseResultCommon>(
     // If finished, use the time/memory usage from result meta
     timeUsed = resultMeta.timeUsed;
     memoryUsed = resultMeta.memoryUsed;
-  } else if (Array.isArray(progress.subtasks)) {
+  } else {
     // If NOT finished, calculate them
-    for (const subtask of progress.subtasks) {
-      for (const { testcaseHash } of subtask.testcases) {
+    if (Array.isArray(progress.subtasks)) {
+      for (const subtask of progress.subtasks) {
+        for (const { testcaseHash } of subtask.testcases) {
+          if (!testcaseHash) continue;
+          if (progress.testcaseResult[testcaseHash].time != null)
+            timeUsed += progress.testcaseResult[testcaseHash].time;
+          if (progress.testcaseResult[testcaseHash].memory != null)
+            memoryUsed = Math.max(memoryUsed, progress.testcaseResult[testcaseHash].memory);
+        }
+      }
+    }
+    if (Array.isArray(progress.extraTests)) {
+      for (const { testcaseHash } of progress.extraTests) {
         if (!testcaseHash) continue;
         if (progress.testcaseResult[testcaseHash].time != null) timeUsed += progress.testcaseResult[testcaseHash].time;
         if (progress.testcaseResult[testcaseHash].memory != null)
@@ -300,6 +312,31 @@ let SubmissionPage: React.FC<SubmissionPageProps> = props => {
     if (samplesDisplayInfo.status == null) samplesDisplayInfo.status = "Accepted";
   } else {
     samplesDisplayInfo.statusText = samplesDisplayInfo.status + " " + samplesFinishedCount + "/" + samples.length;
+  }
+
+  const extraTests = progress?.extraTests || [];
+  const extraTestsRunning = extraTests.some(extraTest => extraTest.running);
+  const extraTestsFinishedCount = extraTests.filter(extraTest => !extraTest.running && !extraTest.waiting).length;
+  const extraTestsDisplayInfo = {
+    status: extraTestsFinishedCount < extraTests.length ? (extraTestsRunning ? "Running" : "Waiting") : null,
+    statusText: null
+  };
+  if (extraTestsDisplayInfo.status == null) {
+    // Extra tests finished
+    for (const extraTest of extraTests) {
+      if (!extraTest.testcaseHash) {
+        extraTestsDisplayInfo.status = "Skipped";
+        break;
+      } else if (progress.testcaseResult[extraTest.testcaseHash].status !== "Accepted") {
+        extraTestsDisplayInfo.status = progress.testcaseResult[extraTest.testcaseHash].status;
+        break;
+      }
+    }
+
+    if (extraTestsDisplayInfo.status == null) extraTestsDisplayInfo.status = "Accepted";
+  } else {
+    extraTestsDisplayInfo.statusText =
+      extraTestsDisplayInfo.status + " " + extraTestsFinishedCount + "/" + extraTests.length;
   }
 
   const subtasks = progress?.subtasks || [];
@@ -586,6 +623,70 @@ let SubmissionPage: React.FC<SubmissionPageProps> = props => {
     )
   });
 
+  const getExtraTestsPanel = (getAdditionalSections: GetAdditionalSectionsCallback) => ({
+    key: "extra-tests",
+    title: (() => {
+      const columnTitle = (width: SemanticWIDTHS) => (
+        <Grid.Column width={width}>
+          <Icon name="dropdown" />
+          {_(".extra_test")}
+        </Grid.Column>
+      );
+
+      const columnStatus = (width: SemanticWIDTHS) => (
+        <Grid.Column width={width}>
+          <StatusText status={extraTestsDisplayInfo.status} statusText={extraTestsDisplayInfo.statusText} />
+        </Grid.Column>
+      );
+
+      if (isWideScreen) {
+        return (
+          <Accordion.Title className={style.accordionTitle}>
+            <Grid>
+              {columnTitle(3)}
+              {columnStatus(4)}
+            </Grid>
+          </Accordion.Title>
+        );
+      } else if (!isMobile) {
+        return (
+          <Accordion.Title className={style.accordionTitle}>
+            <Grid>
+              {columnTitle(4)}
+              {columnStatus(5)}
+            </Grid>
+          </Accordion.Title>
+        );
+      } else if (!isNarrowMobile) {
+        return (
+          <Accordion.Title className={style.accordionTitle}>
+            <Grid>
+              {columnTitle(4)}
+              {columnStatus(7)}
+            </Grid>
+          </Accordion.Title>
+        );
+      } else {
+        return (
+          <Accordion.Title className={style.accordionTitle}>
+            <Grid>
+              {columnTitle(6)}
+              {columnStatus(10)}
+            </Grid>
+          </Accordion.Title>
+        );
+      }
+    })(),
+    content: (
+      <Accordion.Content className={style.accordionContent + " " + style.subtaskContent}>
+        <Accordion
+          className={"styled fluid " + style.subAccordion}
+          panels={getTestcasesAccordionPanels(extraTests, false, getAdditionalSections)}
+        />
+      </Accordion.Content>
+    )
+  });
+
   const getSubtasksAccordionPanels = (getAdditionalSections: GetAdditionalSectionsCallback) =>
     subtasks.map((subtask, i) => ({
       key: i,
@@ -666,30 +767,23 @@ let SubmissionPage: React.FC<SubmissionPageProps> = props => {
       )
     }));
 
-  const getSubtasksView = (getAdditionalSections: GetAdditionalSectionsCallback) =>
-    subtasks.length > 0 &&
-    (subtasks.length === 1 ? (
+  const getSubtasksView = (getAdditionalSections: GetAdditionalSectionsCallback) => {
+    if (subtasks.length === 0) return <></>;
+
+    const samplePanels = samples && samples.length > 0 ? [getSamplePanel(getAdditionalSections)] : [];
+    const subtaskPanels =
+      subtasks.length === 1
+        ? getTestcasesAccordionPanels(subtasks[0].testcases, false, getAdditionalSections)
+        : getSubtasksAccordionPanels(getAdditionalSections);
+    const extraTestPanels = extraTests.length > 0 ? [getExtraTestsPanel(getAdditionalSections)] : [];
+
+    return (
       <Accordion
         className={"styled fluid " + style.accordion}
-        panels={
-          samples && samples.length > 0
-            ? [
-                getSamplePanel(getAdditionalSections),
-                ...getTestcasesAccordionPanels(subtasks[0].testcases, false, getAdditionalSections)
-              ]
-            : getTestcasesAccordionPanels(subtasks[0].testcases, false, getAdditionalSections)
-        }
+        panels={[...samplePanels, ...subtaskPanels, ...extraTestPanels]}
       />
-    ) : (
-      <Accordion
-        className={"styled fluid " + style.accordion}
-        panels={
-          samples && samples.length > 0
-            ? [getSamplePanel(getAdditionalSections), ...getSubtasksAccordionPanels(getAdditionalSections)]
-            : getSubtasksAccordionPanels(getAdditionalSections)
-        }
-      />
-    ));
+    );
+  };
 
   const answerInfo = useMemo(
     () =>

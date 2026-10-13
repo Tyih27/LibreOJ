@@ -28,6 +28,7 @@ return {
   system_message: "システムメッセージ",
   sample: "サンプル",
   sample_testcase: "サンプル",
+  extra_test: "[TBT] Extra Tests",
   subtask: {
     title: "サブタスク",
     score: "得点："

@@ -78,6 +78,7 @@ export interface SubmissionProgress<TestcaseResult> {
     fullScore: number;
     testcases: TestcaseProgressReference[];
   }[];
+  extraTests?: TestcaseProgressReference[];
 }
 
 export interface SubmissionTask<JudgeInfo, SubmissionContent, TestcaseResult, ExtraParameters>
@@ -85,7 +86,7 @@ export interface SubmissionTask<JudgeInfo, SubmissionContent, TestcaseResult, Ex
   events: {
     compiling(): void;
     compiled(compile: { success: boolean; message: OmittableString }): void;
-    startedRunning(samplesCount: number, subtaskFullScores: number[]): void;
+    startedRunning(samplesCount: number, subtaskFullScores: number[], extraTestsCount: number): void;
     sampleTestcaseWillEnqueue(
       sampleId: number,
       sample: ProblemSample,
@@ -100,6 +101,9 @@ export interface SubmissionTask<JudgeInfo, SubmissionContent, TestcaseResult, Ex
     ): Promise<TestcaseResult>;
     testcaseRunning(subtaskIndex: number, testcaseIndex: number): void;
     testcaseFinished(subtaskIndex: number, testcaseIndex: number, result: TestcaseResult): void;
+    extraTestcaseWillEnqueue(extraTestIndex: number, extraParameters: ExtraParameters): Promise<TestcaseResult>;
+    extraTestcaseRunning(extraTestIndex: number): void;
+    extraTestcaseFinished(extraTestIndex: number, result: TestcaseResult): void;
     subtaskScoreUpdated(subtaskIndex: number, newScore: number): void;
     finished(status: SubmissionStatus, score: number): void;
   };
@@ -122,6 +126,13 @@ export interface SubmissionHandler<JudgeInfo, SubmissionContent, TestcaseResult,
   hashSampleTestcase: (
     judgeInfo: JudgeInfo,
     sample: ProblemSample,
+    extraParameters: ExtraParameters
+  ) => Promise<string>;
+
+  hashExtraTestcase?: (
+    judgeInfo: JudgeInfo,
+    extraTestIndex: number,
+    testData: Record<string, string>,
     extraParameters: ExtraParameters
   ) => Promise<string>;
 
@@ -191,6 +202,7 @@ export default async function onSubmission<JudgeInfo, SubmissionContent, Testcas
 
     const sampleTestcaseHashes: string[] = [];
     const testcaseHashes: string[][] = [];
+    const extraTestHashes: string[] = [];
 
     let finished = false;
     task.events = {
@@ -204,7 +216,7 @@ export default async function onSubmission<JudgeInfo, SubmissionContent, Testcas
         if (finished) return;
         progress.compile = compile;
       },
-      startedRunning(samplesCount, subtaskFullScores) {
+      startedRunning(samplesCount, subtaskFullScores, extraTestsCount) {
         if (finished) return;
         progress.progressType = SubmissionProgressType.Running;
         progress.testcaseResult = {};
@@ -220,6 +232,11 @@ export default async function onSubmission<JudgeInfo, SubmissionContent, Testcas
             waiting: true
           }))
         }));
+        if (extraTestsCount > 0) {
+          progress.extraTests = [...new Array(extraTestsCount)].map(() => ({
+            waiting: true
+          }));
+        }
         task.reportProgressRaw(progress);
       },
       async sampleTestcaseWillEnqueue(sampleId, sample, extraParameters) {
@@ -281,6 +298,40 @@ export default async function onSubmission<JudgeInfo, SubmissionContent, Testcas
           // If not "Skipped"
           const testcaseHash = testcaseHashes[subtaskIndex][testcaseIndex];
           progress.subtasks[subtaskIndex].testcases[testcaseIndex].testcaseHash = testcaseHash;
+          progress.testcaseResult[testcaseHash] = result;
+        }
+        task.reportProgressRaw(progress);
+      },
+      async extraTestcaseWillEnqueue(extraTestIndex, extraParameters) {
+        if (finished) return null;
+        if (!problemTypeHandler.hashExtraTestcase) return null;
+
+        const testcaseHash = await problemTypeHandler.hashExtraTestcase(
+          judgeInfo,
+          extraTestIndex,
+          task.extraInfo.testData,
+          extraParameters
+        );
+        extraTestHashes[extraTestIndex] = testcaseHash;
+
+        if (progress.testcaseResult[testcaseHash]) return progress.testcaseResult[testcaseHash];
+
+        return null;
+      },
+      extraTestcaseRunning(extraTestIndex) {
+        if (finished) return;
+        delete progress.extraTests[extraTestIndex].waiting;
+        progress.extraTests[extraTestIndex].running = true;
+        task.reportProgressRaw(progress);
+      },
+      extraTestcaseFinished(extraTestIndex, result) {
+        if (finished) return;
+        delete progress.extraTests[extraTestIndex].waiting;
+        delete progress.extraTests[extraTestIndex].running;
+        if (result) {
+          // If not "Skipped"
+          const testcaseHash = extraTestHashes[extraTestIndex];
+          progress.extraTests[extraTestIndex].testcaseHash = testcaseHash;
           progress.testcaseResult[testcaseHash] = result;
         }
         task.reportProgressRaw(progress);

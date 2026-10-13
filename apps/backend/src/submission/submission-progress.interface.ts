@@ -39,6 +39,7 @@ export interface SubmissionProgress<TestcaseResult extends SubmissionTestcaseRes
   // result
   testcaseResult?: Record<string, TestcaseResult>;
   samples?: TestcaseProgressReference[];
+  extraTests?: TestcaseProgressReference[];
   subtasks?: {
     score: number;
     fullScore: number;

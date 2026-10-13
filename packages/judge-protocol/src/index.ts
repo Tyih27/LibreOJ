@@ -39,6 +39,13 @@ export interface HackTaskExtraInfo {
   };
 }
 
+/** A judge-requested direct upload target for a file the judge produced (e.g. a hack's standard output). */
+export interface JudgeUploadRequest {
+  uuid: string;
+  method: "PUT";
+  url: string;
+}
+
 export type OmittableString =
   | string
   | {

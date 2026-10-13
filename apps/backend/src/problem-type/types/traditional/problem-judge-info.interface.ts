@@ -67,6 +67,16 @@ export interface ProblemJudgeInfoTraditional extends ProblemJudgeInfo {
 
   checker: Checker;
 
+  /*
+   * UOJ-style extra ("gate") tests, run after all subtasks have passed
+   * A failed extra test lowers the score instead of being AC
+   * Normally derived from the testdata by the importer, not meant to be hand-edited
+   */
+  extraTests?: {
+    inputFile: string;
+    outputFile: string;
+  }[];
+
   // The map of files to be copied to the source code directory when compileing for each code language
   extraSourceFiles?: Partial<Record<CodeLanguage, Record<string, string>>>;
 }

@@ -6,6 +6,11 @@ import { getTaskQueue } from "../../plugin/services";
 
 import { SubmissionTask, ProblemSample, SubmissionStatus } from ".";
 
+// UOJ's ordinary_test() forces tot_score to 100 when every normal test passes, then
+// subtracts a -3 penalty for a failing extra test, leaving 97. It is only reached
+// when the base score was a full 100.
+const EXTRA_TEST_FAILURE_SCORE = 97;
+
 interface TestcaseConfigCommon {
   timeLimit?: number;
   memoryLimit?: number;
@@ -26,6 +31,7 @@ interface JudgeInfoCommon<TestcaseConfig extends TestcaseConfigCommon> {
     points?: number;
     dependencies?: number[];
   }[];
+  extraTests?: TestcaseConfigCommon[];
 }
 
 interface SubmissionContentCommon {
@@ -96,7 +102,7 @@ export async function runCommonTask<
     task.extraInfo.samples &&
     !task.extraInfo.submissionContent.skipSamples
   );
-  task.events.startedRunning(runSamples && samples.length, subtaskFullScores);
+  task.events.startedRunning(runSamples && samples.length, subtaskFullScores, judgeInfo.extraTests?.length ?? 0);
 
   const runTestcaseQueued = async (
     sampleId: number,
@@ -143,6 +149,41 @@ export async function runCommonTask<
       task.events.testcaseFinished(subtaskIndex, testcaseIndex, result);
       winston.verbose(`Finished testcase ${subtaskIndex}.${testcaseIndex}: ${JSON.stringify(result)}`);
     }
+
+    return result;
+  };
+
+  // Extra tests are UOJ-style gate tests. They have no subtask level, so the
+  // problem's default time / memory limits apply when the test doesn't set its own.
+  const runExtraTestcaseQueued = async (extraTestIndex: number, testcase: TestcaseConfigCommon) => {
+    const existingResult = await task.events.extraTestcaseWillEnqueue(extraTestIndex, extraParameters);
+
+    const result =
+      existingResult ||
+      (await getTaskQueue().runTaskQueued(async (taskWorkingDirectory, disposer) => {
+        winston.verbose(`Running extra testcase ${extraTestIndex}`);
+        task.events.extraTestcaseRunning(extraTestIndex);
+
+        return await onTestcase(
+          task,
+          judgeInfo,
+          null,
+          null,
+          -1,
+          extraTestIndex,
+          {
+            ...testcase,
+            timeLimit: testcase.timeLimit || judgeInfo.timeLimit,
+            memoryLimit: testcase.memoryLimit || judgeInfo.memoryLimit
+          } as TestcaseConfig,
+          extraParameters,
+          taskWorkingDirectory,
+          disposer
+        );
+      }));
+
+    task.events.extraTestcaseFinished(extraTestIndex, result);
+    winston.verbose(`Finished extra testcase ${extraTestIndex}: ${JSON.stringify(result)}`);
 
     return result;
   };
@@ -249,7 +290,34 @@ export async function runCommonTask<
   }
 
   const roundedScore = totalScore > 100 ? 100 : Math.round(totalScore);
-  if (firstNonAcceptedStatus === null && roundedScore !== 100) {
+
+  let extraTestsFailed = false;
+  if (Array.isArray(judgeInfo.extraTests) && judgeInfo.extraTests.length > 0) {
+    if (firstNonAcceptedStatus === null) {
+      // Full pass on the base tests: run the extra tests as a gate.
+      for (const i of judgeInfo.extraTests.keys()) {
+        const result = await runExtraTestcaseQueued(i, judgeInfo.extraTests[i]);
+        if (result.status !== "Accepted") {
+          extraTestsFailed = true;
+          firstNonAcceptedStatus = result.status;
+          // Skip all remaining extra tests
+          for (let j = i + 1; j < judgeInfo.extraTests.length; j++) {
+            task.events.extraTestcaseFinished(j, null);
+          }
+          break;
+        }
+      }
+    } else {
+      // The base tests already failed, so the extra tests are skipped.
+      for (const i of judgeInfo.extraTests.keys()) {
+        task.events.extraTestcaseFinished(i, null);
+      }
+    }
+  }
+
+  if (extraTestsFailed) {
+    task.events.finished(firstNonAcceptedStatus as unknown as SubmissionStatus, EXTRA_TEST_FAILURE_SCORE);
+  } else if (firstNonAcceptedStatus === null && roundedScore !== 100) {
     // This shouldn't happen
     throw new Error("Couldn't determine submission result status");
   } else if (firstNonAcceptedStatus === null) {

@@ -3,6 +3,8 @@ import winston from "winston";
 import lodashDebounce from "lodash.debounce";
 import SocketIOParser from "socket.io-msgpack-parser";
 
+import { JudgeUploadRequest } from "@libreoj/judge-protocol";
+
 import { updateServerSideConfig, type Config } from "./config";
 import taskHandler, { Task } from "./task";
 
@@ -148,6 +150,18 @@ export class RPC {
     );
 
     return urls;
+  }
+
+  async requestUploadUrl(): Promise<JudgeUploadRequest | null> {
+    const request = await this.withTimeout(
+      new Promise<JudgeUploadRequest | null>(resolve => {
+        this.socket.emit("requestUploadUrl", (response: JudgeUploadRequest | null) => {
+          resolve(response);
+        });
+      })
+    );
+
+    return request;
   }
 
   async startTaskConsumerThread(threadId: number) {

@@ -22,6 +22,7 @@ import { ProblemService } from "../problem/problem.service";
 import { ProblemFileType } from "../problem/problem-file.entity";
 import { SubmissionEntity } from "../submission/submission.entity";
 import { SubmissionDetailEntity } from "../submission/submission-detail.entity";
+import { SubmissionService } from "../submission/submission.service";
 import { JudgeQueueService, JudgeTaskPriorityType, JudgeTask } from "../judge/judge-queue.service";
 import { JudgeTaskService } from "../judge/judge-task-service.interface";
 import { MinioSignFor, FileService } from "../file/file.service";
@@ -46,6 +47,7 @@ export class HackService implements JudgeTaskService<HackProgress, HackTaskExtra
     @InjectRepository(SubmissionDetailEntity)
     private readonly submissionDetailRepository: Repository<SubmissionDetailEntity>,
     private readonly problemService: ProblemService,
+    private readonly submissionService: SubmissionService,
     private readonly judgeQueueService: JudgeQueueService,
     private readonly fileService: FileService,
     private readonly configService: ConfigService,
@@ -195,6 +197,35 @@ export class HackService implements JudgeTaskService<HackProgress, HackTaskExtra
       hack.details = progress.details ?? null;
       await this.hackRepository.save(hack);
       logger.log(`Hack ${hack.id} finished with success ${hack.success}`);
+
+      // A successful hack appends its input and the standard program's output as a new extra test, then rejudges every
+      // score-100 submission. This is best-effort: a failure here must not fail the hack progress itself.
+      if (hack.success === 1 && typeof progress.stdOutputUuid === "string") {
+        try {
+          const outputFile = await this.fileService.processJudgeUploadedFile(progress.stdOutputUuid);
+          if (!outputFile) {
+            logger.warn(`Hack ${hack.id} reported a standard output ${progress.stdOutputUuid} that is not uploaded`);
+          } else {
+            const filenames = await this.problemService.appendHackExtraTest(
+              hack.problemId,
+              hack.inputUuid,
+              outputFile.uuid
+            );
+            if (!filenames) {
+              logger.warn(`Failed to append the extra test of hack ${hack.id} to problem ${hack.problemId}`);
+            } else {
+              const rejudged = await this.submissionService.rejudgeProblemAcceptedSubmissions(hack.problemId);
+              await this.auditService.log("hack.apply_extra_test", AuditLogObjectType.Hack, hack.id, {
+                inputFile: filenames.inputFile,
+                outputFile: filenames.outputFile,
+                rejudgedSubmissions: rejudged
+              });
+            }
+          }
+        } catch (e) {
+          logger.error(`Failed to apply the extra test of hack ${hack.id}: ${e}`);
+        }
+      }
     }
 
     return true;

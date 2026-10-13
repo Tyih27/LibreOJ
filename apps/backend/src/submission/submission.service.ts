@@ -571,6 +571,25 @@ export class SubmissionService implements JudgeTaskService<SubmissionProgress, S
     });
   }
 
+  /**
+   * Re-judges every submission of a problem that scored 100, as UOJ does after a successful hack appends an extra test.
+   *
+   * The submissions are ordered by id ascending so the rejudge order is deterministic, and the count is returned.
+   */
+  async rejudgeProblemAcceptedSubmissions(problemId: number): Promise<number> {
+    const submissions = await this.submissionRepository.find({
+      where: { problemId, score: 100 },
+      order: { id: "ASC" }
+    });
+
+    /* eslint-disable no-await-in-loop */
+    for (const submission of submissions) await this.rejudgeSubmission(submission);
+    /* eslint-enable no-await-in-loop */
+
+    logger.log(`Rejudged ${submissions.length} score-100 submissions of problem ${problemId}`);
+    return submissions.length;
+  }
+
   async cancelSubmission(submission: SubmissionEntity): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-shadow
     const canceled = await this.lockSubmission(submission, true, async submission => {

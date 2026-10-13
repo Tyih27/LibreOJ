@@ -154,6 +154,67 @@ function testFilenameTemplates(conf: Record<string, string>): TestFilenameTempla
   };
 }
 
+/**
+ * Enumerates the extra (`ex_*`) tests actually present in the testdata.
+ *
+ * Unlike the regular tests, the extra tests are not limited by a `problem.conf` count: UOJ appends a new pair when a
+ * problem is hacked, so the config is not rewritten. This walks `n` upward from 1 -- using {@link testFilenameTemplates}
+ * and {@link UOJ_EXTRA_TEST_PREFIX} -- collecting every `n` whose input and output are both present. A half-present
+ * pair is skipped (not an error), and the scan stops once neither counterpart of `n` exists. The result is ordered by
+ * ascending `n`.
+ */
+export function listUojExtraTests(
+  conf: Record<string, string>,
+  presentFilenames: Iterable<string>
+): { inputFile: string; outputFile: string }[] {
+  const { input, output } = testFilenameTemplates(conf);
+  const present = new Set(presentFilenames);
+
+  const extraTests: { inputFile: string; outputFile: string }[] = [];
+  for (let num = 1; ; num++) {
+    const inputFile = `${UOJ_EXTRA_TEST_PREFIX}${input(num)}`;
+    const outputFile = `${UOJ_EXTRA_TEST_PREFIX}${output(num)}`;
+    const hasInput = present.has(inputFile);
+    const hasOutput = present.has(outputFile);
+    if (!hasInput && !hasOutput) break;
+    if (hasInput && hasOutput) extraTests.push({ inputFile, outputFile });
+  }
+  return extraTests;
+}
+
+/**
+ * Computes the filenames of the next extra (`ex_*`) test pair, the one UOJ appends when a problem is hacked.
+ *
+ * The config is never rewritten, so the next index is `maxPresentIndex + 1`, where `maxPresentIndex` is the largest `n`
+ * whose input and output pair is both present in the testdata (`0` when none are). A half-present index is not a pair
+ * and does not advance the scan. Pure: it works on the config content and the filenames only, so it can be unit-tested
+ * without an entity or the filesystem.
+ */
+export function nextUojExtraTestFilenames(
+  confContent: string,
+  presentFilenames: Iterable<string>
+): { inputFile: string; outputFile: string } {
+  const conf = parseProblemConfContent(confContent, UOJ_PROBLEM_CONF_FILENAME);
+  const { input, output } = testFilenameTemplates(conf);
+  const present = new Set(presentFilenames);
+
+  let maxPresentIndex = 0;
+  for (let num = 1; ; num++) {
+    const inputFile = `${UOJ_EXTRA_TEST_PREFIX}${input(num)}`;
+    const outputFile = `${UOJ_EXTRA_TEST_PREFIX}${output(num)}`;
+    const hasInput = present.has(inputFile);
+    const hasOutput = present.has(outputFile);
+    if (!hasInput && !hasOutput) break;
+    if (hasInput && hasOutput) maxPresentIndex = num;
+  }
+
+  const next = maxPresentIndex + 1;
+  return {
+    inputFile: `${UOJ_EXTRA_TEST_PREFIX}${input(next)}`,
+    outputFile: `${UOJ_EXTRA_TEST_PREFIX}${output(next)}`
+  };
+}
+
 function importProblemConf(testData: ProblemFileEntity[]): ProblemDataImportResult {
   const file = findConfFile(testData);
   if (!file) throw new Error("No problem.conf found in testdata");
@@ -218,6 +279,10 @@ function importProblemConf(testData: ProblemFileEntity[]): ProblemDataImportResu
   if (memoryLimit !== undefined) result.memoryLimit = memoryLimit;
   const outputLimit = readNumber(conf, "output_limit", filename);
   if (outputLimit !== undefined) result.outputLimit = outputLimit;
+
+  // Extra tests beyond `n_ex_tests` (e.g. appended by a hack) are intentionally included as well.
+  const extraTests = listUojExtraTests(conf, present);
+  if (extraTests.length) result.extraTests = extraTests;
 
   return result;
 }

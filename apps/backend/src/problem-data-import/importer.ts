@@ -50,6 +50,11 @@ export interface ProblemDataImportResult {
   outputLimit?: number;
   /** A custom checker discovered in a configuration file (traditional / submit-answer problems). */
   checker?: Checker;
+  /**
+   * The UOJ-style extra ("gate") tests discovered in the testdata, in ascending order. A hack appends a new pair, so
+   * this is enumerated from the files present rather than from `problem.conf`.
+   */
+  extraTests?: { inputFile: string; outputFile: string }[];
   /** An interactor discovered in a configuration file (interaction problems). */
   interactor?: {
     interface: "stdio" | "shm";

@@ -204,3 +204,35 @@ export const download = (() => {
     }
   };
 })();
+
+/**
+ * Uploads a local file to a signed URL with an HTTP PUT, streaming the file from disk.
+ *
+ * `Content-Length` is set explicitly: a streamed axios body would otherwise be sent with `Transfer-Encoding: chunked`,
+ * which a MinIO presigned PUT rejects.
+ */
+export async function upload(url: string, filePath: string, description: string): Promise<void> {
+  const { size } = await fs.promises.stat(filePath);
+
+  const abortController = new AbortController();
+  const timeoutTimer = setTimeout(() => {
+    abortController.abort();
+  }, 60 * 60 * 1000);
+
+  try {
+    await axios({
+      url,
+      method: "PUT",
+      data: fs.createReadStream(filePath),
+      headers: { "Content-Length": size },
+      signal: abortController.signal
+    });
+  } catch (e) {
+    if (abortController.signal.aborted) {
+      throw new Error(`Failed to upload ${description}: timed-out after 3600000ms for the PUT request`, { cause: e });
+    }
+    throw new Error(`Failed to upload ${description}: ${e}`, { cause: e });
+  } finally {
+    clearTimeout(timeoutTimer);
+  }
+}

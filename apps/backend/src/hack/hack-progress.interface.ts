@@ -11,4 +11,6 @@ export interface HackProgress extends JudgeTaskProgress {
   // Only valid when finished
   success?: boolean;
   details?: unknown;
+  /** Object-storage uuid of the standard program's output, only present on a successful finished update. */
+  stdOutputUuid?: string;
 }

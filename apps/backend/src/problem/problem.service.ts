@@ -46,7 +46,8 @@ import { planArchiveEntries, PlannedArchiveFile } from "../problem-data-import/a
 import {
   buildUojSamples,
   UOJ_EXTRA_TEST_PREFIX,
-  UOJ_PROBLEM_CONF_FILENAME
+  UOJ_PROBLEM_CONF_FILENAME,
+  nextUojExtraTestFilenames
 } from "../problem-data-import/uoj-problem-conf";
 import { getProblemDataImporters } from "../plugin/services";
 import { ConfigService } from "../config/config.service";
@@ -832,6 +833,79 @@ export class ProblemService {
         await this.redisService.cacheDelete(REDIS_KEY_PROBLEM_PREPROCESSED_JUDGE_INFO.format(problem.id));
 
       return ret;
+    });
+  }
+
+  /**
+   * Appends a hack's input and the standard program's output as a new extra (`ex_*`) test pair of a UOJ `problem.conf`
+   * problem, mirroring UOJ's `dataAddExtraTest()`.
+   *
+   * Only a problem whose testdata already carries a `problem.conf` is appended to: the importer derives
+   * `judgeInfo.extraTests` by enumerating the `ex_*` pairs actually present, so adding the files is enough and the
+   * config is never rewritten. The next index is computed with {@link nextUojExtraTestFilenames}; a problem without a
+   * `problem.conf`, a name collision, or a file-limit overflow leaves the testdata unchanged and returns `null`.
+   *
+   * The hack input's object is shared with the `HackEntity`, so it is inserted but never deleted here.
+   */
+  async appendHackExtraTest(
+    problemId: number,
+    inputUuid: string,
+    outputUuid: string
+  ): Promise<{ inputFile: string; outputFile: string } | null> {
+    return await this.lockManageProblemFile(problemId, ProblemFileType.TestData, async problem => {
+      if (!problem) return null;
+
+      const filenames = await this.connection.transaction("REPEATABLE READ", async transactionalEntityManager => {
+        const testData = await this.getProblemFiles(problem, ProblemFileType.TestData, transactionalEntityManager);
+
+        const confFile = testData.find(file => file.filename.toLowerCase() === UOJ_PROBLEM_CONF_FILENAME);
+        if (!confFile) return null;
+
+        const confContent = await this.fileService.getFileContent(confFile.uuid);
+        const { inputFile, outputFile } = nextUojExtraTestFilenames(
+          confContent,
+          testData.map(file => file.filename)
+        );
+
+        // Do not clobber an existing file if a half-present pair left the computed index occupied.
+        if (testData.some(file => file.filename === inputFile || file.filename === outputFile)) return null;
+
+        const [inputSize, outputSize] = await this.fileService.getFileSizes(
+          [inputUuid, outputUuid],
+          transactionalEntityManager
+        );
+        const limitError = await this.checkAddProblemFileLimit(
+          problem,
+          ProblemFileType.TestData,
+          inputSize + outputSize,
+          inputFile,
+          transactionalEntityManager
+        );
+        if (limitError) {
+          logger.warn(`Failed to append the extra test of hack to problem ${problem.id}: ${limitError}`);
+          return null;
+        }
+
+        const inputProblemFile = new ProblemFileEntity();
+        inputProblemFile.problemId = problem.id;
+        inputProblemFile.type = ProblemFileType.TestData;
+        inputProblemFile.filename = inputFile;
+        inputProblemFile.uuid = inputUuid;
+        await transactionalEntityManager.save(ProblemFileEntity, inputProblemFile);
+
+        const outputProblemFile = new ProblemFileEntity();
+        outputProblemFile.problemId = problem.id;
+        outputProblemFile.type = ProblemFileType.TestData;
+        outputProblemFile.filename = outputFile;
+        outputProblemFile.uuid = outputUuid;
+        await transactionalEntityManager.save(ProblemFileEntity, outputProblemFile);
+
+        return { inputFile, outputFile };
+      });
+
+      if (filenames) await this.redisService.cacheDelete(REDIS_KEY_PROBLEM_PREPROCESSED_JUDGE_INFO.format(problem.id));
+
+      return filenames;
     });
   }
 

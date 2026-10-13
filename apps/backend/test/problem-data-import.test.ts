@@ -7,7 +7,12 @@ import { nativeImporter } from "../src/problem-data-import/native";
 import { polygonImporter } from "../src/problem-data-import/polygon";
 import { createProblemDataImporterRegistry } from "../src/problem-data-import/registry";
 import { uojConfigImporter } from "../src/problem-data-import/uoj-config";
-import { buildUojSamples, uojProblemConfImporter } from "../src/problem-data-import/uoj-problem-conf";
+import {
+  buildUojSamples,
+  listUojExtraTests,
+  nextUojExtraTestFilenames,
+  uojProblemConfImporter
+} from "../src/problem-data-import/uoj-problem-conf";
 import type { ImportContext } from "../src/problem-data-import/importer";
 import { CodeLanguage } from "../src/code-language/code-language.type";
 import type { ProblemFileEntity } from "../src/problem/problem-file.entity";
@@ -510,6 +515,89 @@ test("problem.conf validates extra (sample) tests but does not emit them as test
     () => uojProblemConfImporter.import(missingExtra, TRADITIONAL),
     /missing: ex_input1\.txt, ex_output1\.txt/
   );
+});
+
+test("problem.conf lists the extra tests present in the testdata", () => {
+  const testData = [
+    conf(["n_tests 1", "n_ex_tests 1", "use_builtin_judger on", "use_builtin_checker ncmp"]),
+    file("input1.txt"),
+    file("output1.txt"),
+    file("ex_input1.txt"),
+    file("ex_output1.txt")
+  ];
+
+  const { extraTests } = uojProblemConfImporter.import(testData, TRADITIONAL);
+  assert.deepEqual(extraTests, [{ inputFile: "ex_input1.txt", outputFile: "ex_output1.txt" }]);
+});
+
+test("problem.conf also lists extra tests appended beyond n_ex_tests, in ascending order", () => {
+  const testData = [
+    conf(["n_tests 1", "n_ex_tests 1", "use_builtin_judger on", "use_builtin_checker ncmp"]),
+    file("input1.txt"),
+    file("output1.txt"),
+    file("ex_input1.txt"),
+    file("ex_output1.txt"),
+    file("ex_input2.txt"),
+    file("ex_output2.txt")
+  ];
+
+  const { extraTests } = uojProblemConfImporter.import(testData, TRADITIONAL);
+  assert.deepEqual(extraTests, [
+    { inputFile: "ex_input1.txt", outputFile: "ex_output1.txt" },
+    { inputFile: "ex_input2.txt", outputFile: "ex_output2.txt" }
+  ]);
+});
+
+test("problem.conf keeps rejecting a declared extra test whose files are missing", () => {
+  const testData = [
+    conf(["n_tests 1", "n_ex_tests 1", "use_builtin_judger on", "use_builtin_checker ncmp"]),
+    file("input1.txt"),
+    file("output1.txt")
+  ];
+
+  assert.throws(
+    () => uojProblemConfImporter.import(testData, TRADITIONAL),
+    /missing: ex_input1\.txt, ex_output1\.txt/
+  );
+});
+
+test("listUojExtraTests skips a half-present pair and stops at the first absent index", () => {
+  const templates = { input_pre: "input", input_suf: "txt", output_pre: "output", output_suf: "txt" };
+
+  assert.deepEqual(listUojExtraTests(templates, ["ex_input1.txt", "ex_output1.txt", "ex_input2.txt"]), [
+    { inputFile: "ex_input1.txt", outputFile: "ex_output1.txt" }
+  ]);
+  assert.deepEqual(listUojExtraTests(templates, ["ex_output3.txt"]), []);
+});
+
+test("nextUojExtraTestFilenames returns the index after the present extra-test pairs", () => {
+  const confContent = ["n_tests 1", "use_builtin_judger on", "use_builtin_checker ncmp"].join("\n");
+
+  assert.deepEqual(nextUojExtraTestFilenames(confContent, []), {
+    inputFile: "ex_input1.txt",
+    outputFile: "ex_output1.txt"
+  });
+
+  const present = ["problem.conf", "ex_input1.txt", "ex_output1.txt", "ex_input2.txt", "ex_output2.txt"];
+  assert.deepEqual(nextUojExtraTestFilenames(confContent, present), {
+    inputFile: "ex_input3.txt",
+    outputFile: "ex_output3.txt"
+  });
+});
+
+test("nextUojExtraTestFilenames honours input_pre/input_suf and output_pre/output_suf", () => {
+  const confContent = [
+    "n_tests 1",
+    "input_pre dream",
+    "input_suf in",
+    "output_pre dream",
+    "output_suf ans"
+  ].join("\n");
+
+  assert.deepEqual(nextUojExtraTestFilenames(confContent, ["ex_dream1.in", "ex_dream1.ans"]), {
+    inputFile: "ex_dream2.in",
+    outputFile: "ex_dream2.ans"
+  });
 });
 
 test("problem.conf raises clear errors for missing files, a disabled judger, unknown checkers and bad samples", () => {

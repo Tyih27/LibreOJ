@@ -8,6 +8,8 @@ import { Repository, EntityManager, In } from "typeorm";
 import { v4 as UUID } from "uuid";
 import { Client as MinioClient, ClientOptions } from "minio";
 
+import { JudgeUploadRequest } from "@libreoj/judge-protocol";
+
 import { FileEntity } from "./file.entity";
 
 import { FileUploadInfoDto, SignedFileUploadRequestDto } from "./dto";
@@ -359,6 +361,54 @@ export class FileService implements OnModuleInit {
 
     if (signFor) return this.minioSigner[signFor].replaceUrl(url);
     else return url;
+  }
+
+  async signUploadLink({ uuid, signFor }: { uuid: string; signFor?: MinioSignFor }): Promise<string> {
+    const client = signFor ? this.minioSigner[signFor].client : this.minioClient;
+    const url = await client.presignedPutObject(this.bucket, uuid, FILE_UPLOAD_EXPIRE_TIME);
+
+    if (signFor) return this.minioSigner[signFor].replaceUrl(url);
+    else return url;
+  }
+
+  /**
+   * Creates a direct upload target for a file the judge produced, such as a hack's standard output.
+   */
+  async createJudgeUploadRequest(): Promise<JudgeUploadRequest> {
+    const uuid = UUID();
+    return {
+      uuid,
+      method: "PUT",
+      url: await this.signUploadLink({ uuid, signFor: MinioSignFor.Judge })
+    };
+  }
+
+  /**
+   * Registers a file the judge uploaded directly as a `FileEntity`.
+   *
+   * @return `null` if the judge has not uploaded the object; an existing entity unchanged if it is already registered;
+   *         otherwise the newly created entity.
+   */
+  async processJudgeUploadedFile(uuid: string): Promise<FileEntity | null> {
+    let stat: Awaited<ReturnType<MinioClient["statObject"]>>;
+    try {
+      stat = await this.minioClient.statObject(this.bucket, uuid);
+    } catch (e) {
+      if (e.message === "The specified key does not exist.") return null;
+      throw e;
+    }
+
+    const existing = await this.fileRepository.findOneBy({ uuid });
+    if (existing) return existing;
+
+    const file = new FileEntity();
+    file.uuid = uuid;
+    file.size = stat.size;
+    file.uploadTime = new Date();
+
+    await this.fileRepository.save(file);
+
+    return file;
   }
 
   async runMaintainceTasks(): Promise<void> {

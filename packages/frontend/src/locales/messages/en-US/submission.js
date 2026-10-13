@@ -28,6 +28,7 @@ return {
   system_message: "System Message",
   sample: "Samples",
   sample_testcase: "Sample",
+  extra_test: "Extra Tests",
   subtask: {
     title: "Subtask",
     score: "Score"
