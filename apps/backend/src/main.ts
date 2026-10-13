@@ -35,6 +35,8 @@ import { ErrorFilter } from "./error.filter";
 import { RecaptchaFilter } from "./recaptcha.filter";
 import { ClusterService } from "./cluster/cluster.service";
 import { domainModulesPlugin } from "./plugin/domain-modules.plugin";
+import { auditPlugin } from "./plugin/domains/audit.plugin";
+import { filePlugin } from "./plugin/domains/file.plugin";
 import { homepagePlugin } from "./plugin/domains/homepage.plugin";
 import { infraPlugin } from "./plugin/infra.plugin";
 import { problemDataImportersPlugin } from "./plugin/problemDataImporters.plugin";
@@ -54,6 +56,8 @@ const PROBLEM_DATA_IMPORT_BUNDLE = "@libreoj/backend-problem-data-import";
 const CODE_LANGUAGE_BUNDLE = "@libreoj/plugin-code-language";
 const DOMAIN_MODULES_BUNDLE = "@libreoj/backend-domain-modules";
 const DOMAIN_HOMEPAGE_BUNDLE = "@libreoj/backend-domain-homepage";
+const DOMAIN_AUDIT_BUNDLE = "@libreoj/backend-domain-audit";
+const DOMAIN_FILE_BUNDLE = "@libreoj/backend-domain-file";
 
 async function runMigration(app: NestExpressApplication, migrationConfigFile: string) {
   const migrationService = app.get(MigrationService);
@@ -159,6 +163,8 @@ async function bootstrap() {
       }),
       [DOMAIN_MODULES_BUNDLE]: domainModulesPlugin,
       [DOMAIN_HOMEPAGE_BUNDLE]: homepagePlugin,
+      [DOMAIN_AUDIT_BUNDLE]: auditPlugin,
+      [DOMAIN_FILE_BUNDLE]: filePlugin,
       [BACKEND_INFRA_BUNDLE]: infraPlugin,
       [PROBLEM_DATA_IMPORT_BUNDLE]: problemDataImportersPlugin,
       [CODE_LANGUAGE_BUNDLE]: codeLanguagePlugin

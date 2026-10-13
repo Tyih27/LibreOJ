@@ -19,7 +19,9 @@ test("backend profile lists the bundles in load order", () => {
       "@libreoj/backend-infra",
       "@libreoj/backend-problem-data-import",
       "@libreoj/plugin-code-language",
-      "@libreoj/backend-domain-homepage"
+      "@libreoj/backend-domain-homepage",
+      "@libreoj/backend-domain-audit",
+      "@libreoj/backend-domain-file"
     ]
   );
 });

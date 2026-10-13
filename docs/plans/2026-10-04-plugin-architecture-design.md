@@ -517,6 +517,18 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **重**：`problem` `submission` `judge` `hack`（`homepage` 已在 M5.1）`migration`
 - 每域一个插件；每步都要求功能等价（`pnpm check` + `test` + Swagger 等价 + 真机冒烟）。
 
+**统一范式（M5.2 起）**：`apps/backend/src/plugin/domains/define-domain-plugin.ts` 的
+`defineDomainPlugin(name, module)` 承载"require 注册表 + `ctx.effect` 登记模块"的样板；每个域插件退化为一行
+`export const xPlugin = defineDomainPlugin("@libreoj/backend-domain-x", XModule)`。homepage 已回收到该范式。
+
+**进度**：
+- ✅ `homepage`（M5.1）、`audit`、`file`（M5.2，2026-10-13）。`audit` 原来并不在 `AppModule.imports`（仅经其它模块间接可达），本次将其显式纳入插件图；`file` 从 `AppModule.imports` 移除。
+- **注意（与 M5.1 的差别）**：`audit`/`file` 被 `user`/`problem`/`submission`/`hack`/`judge`/`group`/`migration`/`auth`/`discussion` 等大量模块直接 `import`，
+  因此**禁用它们的 bundle 不会让它们从图中消失**（仍被别的模块带入）——对这类共享叶域，"插件化"是**注册点归一**（`AppModule.imports` 变小），
+  而非 M5.1 那种"可从 profile 真正卸载"。真正可卸载的前提是**没有别的模块直接 import 它**；`homepage` 满足，故能验证禁用。
+- 验证（M5.2）：真机启动成功（`failureMode: fatal` 下 = 模块图全解析），OpenAPI 仍 **93 条**（`audit`/`file` 本就无路由），
+  `POST /api/user/queryAuditLogs`（用 `AuditService`）与 `POST /api/problem/downloadProblemFiles`（用 `FileService`）均返回 **400**（参数校验，非 500 ⇒ 服务已解析）。
+
 ### 16.6 M5.final 收口
 - `AppModule.imports` 清空（仅剩 core：`AppController`/`AppService`/filter/中间件）；`AppModule` 退役为 core 模块；残留硬编码注册表清零。
 

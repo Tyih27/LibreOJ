@@ -11,3 +11,5 @@ profiles:
       - "@libreoj/plugin-code-language"
       # Domain bundles follow the infrastructure bundles; each contributes its Nest module through the registry.
       - "@libreoj/backend-domain-homepage"
+      - "@libreoj/backend-domain-audit"
+      - "@libreoj/backend-domain-file"
