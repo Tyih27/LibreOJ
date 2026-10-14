@@ -320,6 +320,39 @@ libreoj-dump-config <profile.yaml> [--patch <patch.yaml>]...
 profile 中的相对插件路径以 profile 文件所在目录为基准解析，故 profile 与其本地插件一起移动。参数缺失、文件
 读取 / YAML 解析失败或插件解析失败时，写 stderr 并返回退出码 1。
 
+## libreoj-plugin-validate CLI
+
+包提供 `libreoj-plugin-validate` 可执行文件（`src/bin/validate-plugin.ts`，bin 指向
+`dist/bin/validate-plugin.js`），供第三方校验一个插件包是否符合分发格式：
+
+```
+libreoj-plugin-validate <name-or-path> [--base-dir <dir>] [--json]
+```
+
+校验逻辑即包根导出的 `validatePlugin(name, options?)`（`src/validate.ts`），**永不抛错**，而是返回
+`PluginValidationResult`（`ok` / `requested` / `definitionName` / `entry` / `moduleKind` / `manifestEntry` /
+`manifestConfig` / `errors` / `warnings`）。
+
+- 目标解析与 `NodeResolver` 一致：以 `.` 开头或绝对路径相对 `--base-dir`（缺省为当前工作目录）解析，其它按包名
+  解析；加载走真实解析路径（ESM 走动态 `import()`、CommonJS 走 `require`），入口选择同 `NodeResolver`
+  （`libreoj.entry` → `main` → 解析到的文件）。
+- 人类可读输出：先打印标头（`requested`，以及可确定时的 `definitionName` / `entry` / `moduleKind`），随后每行
+  `error: …` 与 `warning: …`，最后一行 `ok` 或 `failed`。
+- `--json` 打印完整 `PluginValidationResult`（缩进 2 空格）到 stdout。
+- 退出码：`ok` 为 true 时 0，否则 1；参数缺失、未知选项或 `--base-dir` 缺值时写 stderr 并返回 1。
+- **error（致命，`ok: false`）**：找不到 `package.json`；`libreoj` manifest 不是对象，或它的 `entry` 不是字符串 /
+  `config` 不是对象；入口无法解析；模块未导出可用的 `PluginDefinition`
+  （须为带字符串 `name` 与函数 `apply` 的对象，或具名函数）；`definition.name` 为空 / 仅空白；
+  `inject.required` / `inject.optional` 或 `provide` 存在但不是字符串数组；`config.defaults` 存在但不是普通对象；
+  `config.parse` 存在但不是函数。
+- **warning（不致命，不影响 `ok`）**：包未声明 `libreoj.entry`（回退到 `main`）；按包名发起请求时定义的 `name`
+  与 `requested` 不一致（本地路径请求不告警）；定义未声明 `config` schema。
+
+```bash
+node packages/plugin-core/dist/bin/validate-plugin.js ./packages/plugin-core/fixtures/demo/provides
+node packages/plugin-core/dist/bin/validate-plugin.js ./packages/plugin-core/fixtures/bad-inject --json
+```
+
 ## 最小可运行示例
 
 `fixtures/demo` 提供两个本地 CommonJS 插件：

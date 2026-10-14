@@ -111,7 +111,8 @@ export class Context {
 
 ### 5.4 配置分层与 dump-config
 
-- **bundle**：一个插件包 = `package.json` 的 `libreoj` manifest（默认配置 + inject/provide + 入口）及其编译产物。
+- **bundle**：一个插件包 = `package.json` 的 `libreoj` manifest（`entry` 入口 + `config` 最低默认配置层）及其编译产物；
+  `inject` / `provide` 写在插件定义里，不在 manifest（分发格式详见 `docs/plugins/distribution-format.md`）。
 - **profile**（YAML）：
 
 ```yaml
@@ -187,6 +188,8 @@ patch:                         # 本 profile 的 patch 层
 | M4 | frontend 构建期组装，迁移首页/导航 | 构建产物含插件注册表 |
 | M5 | 逐域迁移 backend 其余模块，删除硬编码注册表 | 无残留硬编码；seam 全覆盖 |
 | M6 | 分发格式与 profile 模板文档 | 第三方可按文档新增插件 |
+
+> M6（分发格式与 profile 模板文档）的实施范围、交付物与出口证据见 §17。
 
 ## 10. M1 实施计划（子 Agent 逐任务执行）
 
@@ -568,3 +571,38 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 ### 16.7 后续（不在 M5 内）
 - **M7｜终态移除 Nest**（§3 已定终态）：新增非 Nest 的 `http` provider，把域插件的端点在 **provider 无关**的形式下重述，
   OpenAPI 改由 provider 无关的路由元数据生成（或另立 OpenAPI seam）。M5 **只保证不阻碍**它，不执行。
+
+## 17. M6 分发格式与 profile 模板文档
+
+对应 §9 路线表 **M6**（"分发格式与 profile 模板文档"），出口条件：**第三方可按文档新增插件**。
+
+此前"怎么加插件"的知识散落在源码注释、各包 README 与本文里，没有一个对外入口；且本文 §5.4 曾把 `inject` / `provide`
+错记为 manifest 字段（实际只在插件定义里）。M6 把格式固化为可照做的规范 + 指南 + 模板，并用一个真跑通的示例兜底。
+
+### 17.1 范围与决策（已拍板）
+- **范围**：文档 + **一个独立校验命令**（不改插件加载语义）+ 一个第三方风格示例包。
+- **指南落点**：新建 `docs/plugins/`（跨 backend / judge / frontend），从根 `README.md` 与 `plugin-core` README 链接。
+- **示例形态**：新建 `examples/plugin-example`（`libreoj-plugin-example`，**无 `@libreoj` scope**，模拟真第三方）。
+- **校验命令**：`libreoj-plugin-validate <name-or-path> [--base-dir] [--json]`，随 `@libreoj/plugin-core` 分发。
+
+### 17.2 交付物
+- **分发格式规范**：`docs/plugins/distribution-format.md`（manifest 字段、入口导出契约、CJS/ESM、依赖、命名、分发方式）。
+- **作者指南**：`docs/plugins/authoring.md`（step-by-step + seam 目录：`plugin-api` 跨端 seam 与 backend 内部 seam）。
+- **profile 模板与运维**：`docs/plugins/profiles.md`（`extends` / `bundles` / `plugins` / `config` / `patch` / `disabled`、
+  站点覆盖、`dump-config` / `validate` 排查）。索引 `docs/plugins/README.md`。
+- **校验命令**：`packages/plugin-core` 的 `libreoj-plugin-validate` CLI + `validatePlugin()`（结构化诊断），单测覆盖。
+- **示例包**：`examples/plugin-example`（TS→CJS + `libreoj` manifest + README + `profile.example.yaml` + 加载测试）。
+
+### 17.3 出口证据
+- **校验命令**（`packages/plugin-core`）：`libreoj-plugin-validate` 随包分发；`pnpm --filter @libreoj/plugin-core build / check-types / test / check-format`
+  全绿（**205** 个测试通过，含新增的 `validate.test.ts` 与 bin 测试）。对合法包 `fixtures/demo/provides` 退出 0 并打印
+  `definition / entry / module / ok`；对坏包（`fixtures/does-not-exist`、`bad-export`、`bad-inject`、`bad-manifest`、
+  `bad-manifest-entry`、`bad-manifest-config`）退出 1 并给出可操作报错。
+- **示例包**（`examples/plugin-example`）：`libreoj-plugin-example` 可被 `NodeResolver` 加载；`pnpm --filter libreoj-plugin-example
+  build / check-types / test / check-format` 全绿（2 个测试：profile 覆盖生效 + manifest/default 回落）。
+  `libreoj-plugin-validate . --base-dir examples/plugin-example` 退出 0；`libreoj-dump-config examples/plugin-example/profile.example.yaml`
+  显示该条目 `state: active`、`config.greeting: hello from the profile`。
+- **workspace / lockfile**：`pnpm-workspace.yaml` 增加 `examples/*`；`pnpm install --frozen-lockfile` 通过
+  （18 个 workspace 工程，新增 `examples/plugin-example` importer）。
+- **文档**：`docs/plugins/{README,distribution-format,authoring,profiles}.md`；根 `README.md` 与 `plugin-core` README 链接；
+  §5.4 manifest 描述已修正。

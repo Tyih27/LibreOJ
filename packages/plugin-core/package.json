@@ -11,7 +11,8 @@
     }
   },
   "bin": {
-    "libreoj-dump-config": "dist/bin/dump-config.js"
+    "libreoj-dump-config": "dist/bin/dump-config.js",
+    "libreoj-plugin-validate": "dist/bin/validate-plugin.js"
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",

@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/bad-manifest-entry",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.js",
+  "libreoj": {
+    "entry": 42
+  }
+}

@@ -12,7 +12,10 @@ export type { FiberManagerOptions } from "./fiber";
 export { PluginHost } from "./host";
 export type { PluginHostOptions, PluginRecord } from "./host";
 export { NodeResolver } from "./node-resolver";
-export type { NodeResolverOptions, PluginManifest } from "./node-resolver";
+export type { NodeResolverOptions } from "./node-resolver";
+export type { PluginManifest } from "./manifest";
+export { validatePlugin } from "./validate";
+export type { PluginValidationResult } from "./validate";
 export { InlineResolver, normalizePlugin } from "./plugin";
 export type {
   Inject,

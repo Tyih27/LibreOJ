@@ -1,0 +1,10 @@
+# Reference profile for the example plugin. Because `profiles:` is absent, the whole document is a single configuration
+# layer.
+name: example
+plugins:
+  # The profile sits in the plugin package root, so "." resolves to the package itself. A site that installed the
+  # package would list it by package name instead: "libreoj-plugin-example".
+  - "."
+config:
+  # Overrides the manifest/default greeting for the plugin addressed as ".".
+  ".": { greeting: "hello from the profile" }

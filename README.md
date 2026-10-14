@@ -127,6 +127,7 @@ Component documentation:
 - [Judge protocol](packages/judge-protocol/README.md)
 - [simple-sandbox](packages/simple-sandbox/README.md)
 - [Sandbox rootfs](infra/sandbox-rootfs/README.md)
+- [Plugin authoring](docs/plugins/README.md)
 
 ## License
 

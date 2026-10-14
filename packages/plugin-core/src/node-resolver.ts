@@ -1,29 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import { findPackageJson, readPackageJson, toDefinition, unwrapExports, type PluginPackageJson } from "./manifest";
 import { deepMerge, isPlainObject } from "./object";
-import {
-  normalizePlugin,
-  type ModuleResolver,
-  type PluginDefinition,
-  type PluginFunction,
-  type ResolveOptions
-} from "./plugin";
-
-/** The `libreoj` block of a plugin package's `package.json`. */
-export interface PluginManifest {
-  /** Entry module, relative to the package root. Falls back to `main`, then to the resolved file. */
-  entry?: string;
-  /** Default configuration for the plugin, the lowest layer under the plugin's own `config.defaults`. */
-  config?: Record<string, unknown>;
-}
-
-interface PackageJson {
-  main?: string;
-  /** Node's module kind for the package: `"module"` makes its `.js` files (and the entry) ES modules. */
-  type?: string;
-  libreoj?: PluginManifest;
-}
+import { type ModuleResolver, type PluginDefinition, type ResolveOptions } from "./plugin";
 
 export interface NodeResolverOptions {
   /** Directory relative plugin paths and package lookups are resolved from. Defaults to `process.cwd()`. */
@@ -39,52 +18,6 @@ function describeError(error: unknown): string {
  * `import()` to `require`; building the import through `new Function` keeps it a native ESM load.
  */
 const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<unknown>;
-
-/** Walks up from `start` to the nearest directory containing a `package.json`. */
-function findPackageJson(start: string): string | undefined {
-  let dir = start;
-  for (;;) {
-    const candidate = path.join(dir, "package.json");
-    if (existsSync(candidate)) return candidate;
-
-    const parent = path.dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
-
-/**
- * Unwraps a module's exports to the value that describes the plugin: an ES module's named `plugin` export, then its
- * `default` export, then the exports object itself (a CommonJS module's `module.exports` when neither is present).
- */
-function unwrapExports(moduleExports: unknown): unknown {
-  if (moduleExports === null || (typeof moduleExports !== "object" && typeof moduleExports !== "function")) {
-    return moduleExports;
-  }
-  const record = moduleExports as { plugin?: unknown; default?: unknown };
-  if (record.plugin !== undefined) return record.plugin;
-  if (record.default !== undefined) return record.default;
-  return moduleExports;
-}
-
-/**
- * Normalizes an unwrapped module export into a `PluginDefinition`: a function is lifted through `normalizePlugin`
- * (using its own name, or `fallbackName` for an anonymous one), and an object must itself carry a name and apply.
- * Returns `undefined` when the export is not a usable plugin.
- */
-function toDefinition(candidate: unknown, fallbackName: string): PluginDefinition | undefined {
-  if (typeof candidate === "function") {
-    return normalizePlugin(candidate as PluginFunction, fallbackName);
-  }
-  if (
-    isPlainObject(candidate) &&
-    typeof (candidate as { name?: unknown }).name === "string" &&
-    typeof (candidate as { apply?: unknown }).apply === "function"
-  ) {
-    return candidate as unknown as PluginDefinition;
-  }
-  return undefined;
-}
 
 /**
  * A {@link ModuleResolver} that loads plugin packages from the filesystem. Lookup: a name starting with `.` or an
@@ -110,13 +43,13 @@ export class NodeResolver implements ModuleResolver {
     const resolvedFile = this.resolveFile(name);
 
     let packageRoot = path.dirname(resolvedFile);
-    let manifest: PackageJson = {};
+    let manifest: PluginPackageJson = {};
     let packageJsonPath: string | undefined;
     const found = findPackageJson(packageRoot);
     if (found) {
       packageJsonPath = found;
       packageRoot = path.dirname(found);
-      manifest = JSON.parse(readFileSync(found, "utf8")) as PackageJson;
+      manifest = readPackageJson(found);
     }
 
     const entryFile = this.resolveEntry(name, resolvedFile, packageRoot, manifest);
@@ -131,7 +64,7 @@ export class NodeResolver implements ModuleResolver {
     name: string,
     entryFile: string,
     packageJsonPath: string | undefined,
-    manifest: PackageJson,
+    manifest: PluginPackageJson,
     options: ResolveOptions
   ): PluginDefinition {
     if (options.fresh) {
@@ -150,7 +83,7 @@ export class NodeResolver implements ModuleResolver {
   }
 
   /** Loads an ES module entry with a native dynamic `import()`, which no cache-invalidation API can bypass. */
-  private async loadEsm(name: string, entryFile: string, manifest: PackageJson): Promise<PluginDefinition> {
+  private async loadEsm(name: string, entryFile: string, manifest: PluginPackageJson): Promise<PluginDefinition> {
     let moduleExports: unknown;
     try {
       moduleExports = await dynamicImport(pathToFileURL(entryFile).href);
@@ -162,7 +95,12 @@ export class NodeResolver implements ModuleResolver {
   }
 
   /** Picks the definition out of the module exports and folds in the `libreoj.config` manifest layer. */
-  private finalize(name: string, entryFile: string, manifest: PackageJson, moduleExports: unknown): PluginDefinition {
+  private finalize(
+    name: string,
+    entryFile: string,
+    manifest: PluginPackageJson,
+    moduleExports: unknown
+  ): PluginDefinition {
     const definition = toDefinition(unwrapExports(moduleExports), name);
     if (!definition) {
       throw new Error(
@@ -196,7 +134,7 @@ export class NodeResolver implements ModuleResolver {
     }
   }
 
-  private resolveEntry(name: string, resolvedFile: string, packageRoot: string, manifest: PackageJson): string {
+  private resolveEntry(name: string, resolvedFile: string, packageRoot: string, manifest: PluginPackageJson): string {
     const entry = manifest.libreoj?.entry;
     if (entry === undefined) return resolvedFile;
 
