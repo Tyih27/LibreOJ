@@ -672,18 +672,26 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 5. **终态零 Nest**：`apps/backend` 的 `package.json` 删除 `@nestjs/*`（含 `@nestjs/platform-express` /
    `@nestjs/swagger` / `@nestjs/typeorm`）。
 
-### 18.3 子里程碑（最终形态，2026-10-14 定稿）
-按「**路由优先**」推进：迁移期由现有 `http-nest`（Express）挂载声明式路由，Nest 只负责存量 controller 与 DI；
-等 OpenAPI 与 DI 都搬完，再换 Nest-free provider、删 Nest。**DI 形态**：单一 `services.ts` 手动装配 + `lazy` 破环
-（§18.0），内核只保留 `HTTP`/`WEBSOCKET`/`*_REGISTRY` 等真扩展点，**不注册业务 Service**。
+### 18.3 子里程碑（修订：**controller 先行**，2026-10-14 定稿）
+**顺序修订**：原「service 先行（M7.2）」改为「**controller 先行**」。依据（§18.1 侦察 + 源码核实）：
+实例级强连通分量只有一个 9 元素 SCC（且在 service 层），**controller 层完全无环**；且 2 个 socket.io 网关在 Nest 持有
+socket server 前**不能**以 `useValue` 交给 Nest（`instance-wrapper.js` 置 `metatype=null` → `socket-module.js`
+过滤掉 → 网关静默丢弃）。故让 controller 先迁、service 与网关留到最后一步与 provider 一起收口，避免
+「`services.ts` ↔ Nest DI」双向互锁。
+
+DI 形态不变（§18.0）：单一 `services.ts` 手动装配 + `lazy` 破环，内核只留真扩展点，**不注册业务 Service**。
+路由 handler 通过 `apps/backend/src/service-resolver.ts` 的 `svc(key)` **请求期**解析 service（迁移期绑 `nestApp.get`，
+收口时切 `services`），路由代码一次成型、终态零改动。
 
 | 子项 | 内容 | 出口条件 |
 | --- | --- | --- |
 | **M7.0 ✅** | 声明式路由 `HttpRouteSpec` + Nest-free OpenAPI 生成 | 已达成（§18.5）|
-| **M7.1** | ① provider 无关管线执行器 `executeHttpRoute`（校验/auth/错误映射）；② 由 `http-nest` 挂载声明式路由；③ 导出 `openapi-baseline.json` 基线快照 | 基线生成脚本可复现；管线单测覆盖校验/鉴权/错误三态 |
-| **M7.2** | 服务层**水平**脱钩：29 实体交 `DataSource`、37 service 收进 `services.ts` 手动装配 + `lazy` 破环，用 `useValue` 桥回 Nest；**12 controller 不动** | `pnpm --filter @libreoj/backend test` 绿；存量 `/docs-json` 与基线 `deepEqual` |
-| **M7.3** | 12 controller **垂直逐个**迁为 `HttpRouteSpec`（leaf-first：`app`/`cors`/`migration`/`judge-client` → `auth`/`user`/`permission` → `problem`/`submission` → `hack`/`discussion`/`group`），含 2 个 socket.io 网关 | 每迁一个 controller 即与基线 `deepEqual`；对应 module 删除 |
-| **M7.final** | 切 `http-fastify`、删 `AppModule`/`http-nest`/`nest-cli.json`；vendor 运行期 swagger + 构建期 swagger 插件；自研 `build.cjs` 取代 `nest build`；清 `@nestjs/*` | `pnpm check` 绿；`pnpm why @nestjs/common` 为空；生成前端客户端 `git diff` 为空 |
+| **M7.1 ✅** | provider 无关管线 `executeHttpRoute` + `http-nest` 挂载 + `openapi-baseline.json` | 已达成（§18.7）|
+| **M7.2** | **基础设施**：`service-resolver.ts`（`svc` + `bindNestServiceResolver`）；**seam 层 auth 中间件**（复用 `AuthMiddleware` 的 session 解析 + ALS，因 seam 路由不经 Nest 中间件，§18.7）；`ALL_ENTITIES` 显式数组 | 一个用 `@CurrentUser()` 的样例路由在 seam 上能拿到 session（运行期断言）|
+| **M7.3** | 12 controller **分批**迁为 `HttpRouteSpec`（`app`/`migration`/`cors` → `homepage`/`judge-client`/`hack` → `auth`/`group`/`user`/`discussion` → `submission`/`problem`）| 每批 `mergeOpenApiDocs` vs 基线 `deepEqual` **+ 运行期 auth 冒烟断言** |
+| **M7.4** | 摘 `@nestjs/websockets`：网关删 WS 装饰器（保留 `@Injectable`），改由 `mountWsGateway` 挂载 `createSharedSocketIo(httpServer)`；顺手修 `submission-progress.gateway.ts:152` 的 `sockets.get(client)` bug | Socket.IO 进程内 loopback 冒烟测试 |
+| **M7.5** | 落 `services.ts`（5 条 `lazy` 破环边 + 重入哨兵），`svc` 切到 `bindManualServiceResolver` | 对象图测试：单实例、5 条环边穿透、构造参数、lifecycle 顺序（不起 MariaDB/Redis）|
+| **M7.final** | 切 `http-fastify`、删 `AppModule`/`*.module.ts`/`nest-cli.json`；vendor 运行期 + 构建期 swagger；自研 `build.cjs` 取代 `nest build`（**含 asset 拷贝**）；清 `@nestjs/*` | `pnpm check` 绿；`pnpm why @nestjs/common` 为空；生成前端客户端 `git diff` 为空 |
 
 ### 18.4 风险与缓解
 - **OpenAPI 生成（头号）**：`@nestjs/swagger` 的 schema 生成是内部 API。缓解：M7.0 先 spike 三条路径择一——
@@ -754,3 +762,40 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   `@Inject(forwardRef(...))`、`@Recaptcha()`（GoogleRecaptchaGuard）依赖均已打桩；`dist/main.js` 预塞进 `require.cache` 防 `bootstrap()`。
 - **验收**：`backend` build/check-types/lint/test（**87**，含 pipeline 9 + bridge 3 + baseline 3）全绿；基线脚本幂等。
 - **纠正**：迁移期 seam 路由**不经** Nest `AuthMiddleware`（`create()` 不 `init()`，中间件在 `listen()` 才绑）——M7.3 需在 seam 层补鉴权。
+
+### 18.8 路线修订（controller 先行）与新增避坑（2026-10-14）
+
+**修订依据**
+- 实例级强连通分量**只有一个**（9 元素：User/UserPrivilege/Submission/Problem/SubmissionStatistics/SubmissionProgress/
+  SubmissionProgressGateway/Group/Permission）；**controller 层无环**。此前的「user↔auth 实例环」是误判（`UserService`
+  并不依赖 `AuthService`，只是模块级 `forwardRef`）。
+- 2 个 socket.io 网关**不能**经 `useValue` 交给 Nest：`@nestjs/core/injector/instance-wrapper.js` 在 `useValue`
+  分支置 `metatype=null`，而 `@nestjs/websockets/socket-module.js` 的 `connectAllGateways` 用 `.filter(w => !w.isNotMetatype)`
+  过滤 → 网关被静默丢弃、`@WebSocketServer()` 永不注入。
+
+**新增避坑**
+1. **seam 层鉴权是迁任何 `@CurrentUser()` 路由的硬前置，且 `openapi-baseline.json` 验不出。** seam 路由不经 Nest
+   `AuthMiddleware`（§18.7），`req.session` 为 `undefined`；直接迁会让 `currentUser` 恒 `undefined`（静默行为回归）。
+   必须在 M7.2 增加 seam 中间件：解析 `authorization` → `AuthSessionService.accessSession` → 写 `request.raw.session`
+   （含 `userCanSkipRecaptcha`）→ **在 `asyncLocalStorage.run(raw, () => next())` 内放行**（否则 `AuditService` 经
+   `getCurrentRequest()` 取不到请求）。`asyncLocalStorage` 现为 `auth.middleware.ts` 模块私有——应抽出共享
+   `resolveSession`/`runWithRequest` 供 Nest 中间件与 seam 中间件共用，避免两份 store。每批迁移除 `deepEqual(基线)`
+   外**必须补运行期 auth 冒烟断言**。
+2. `svc(key)` 是**请求期**解析（`http-nest` 的 `route()` 在 `start` 后冻结，handler 只能在请求期取 service）；
+   `service-resolver.ts` 用模块级 `currentResolver`，`bindNestServiceResolver`（迁期）/`bindManualServiceResolver`（收口）原子切换，
+   路由代码零改动。属局部 service-locator，可接受。
+3. **`services.ts` 必须接收两个内核 registry**（`CODE_LANGUAGE_REGISTRY`、`PROBLEM_TYPE_REGISTRY`）——`CodeLanguageService` /
+   `ProblemTypeFactoryService` 注入它们；对象图测试也要能传入。
+4. **对象图测试用「最小 config」**：`MetricsService` 构造即 `http.createServer().listen(port)`、`EventReportService`
+   构造即 `Telegraf.launch()`；只有配置缺 `metrics` / `eventReport.telegramBotToken` 时才 early-return。测试配置**不得**含这两段，
+   否则单测里起端口/连 Telegram。除 `DataSource`/`RedisService` 外的 service 用真实类实例化。
+5. **lazy getter 必须显式 touch**：`JudgeGateway` 构造期就 `redis.subscribe("cancel-task")`、`SubmissionProgressGateway`
+   构造期注册 metric；若无人依赖则永不 `new`。在 `initBackendServices` 显式访问它们。
+6. **`emitDecoratorMetadata` 的参数类型自检只是启发式**：`Reflect.getMetadata('design:paramtypes')` 只对类类型参数给到构造器，
+   `DataSource`/`Repository`/`@Inject(token)` 运行时是 `Object`/`undefined`，比对不出——不可宣称 100%。
+7. **`DataSource` 用显式 `ALL_ENTITIES` 数组**（29 个），替代 `${__dirname}/../**/*.entity{.ts,.js}` glob：避免把构造搬层后
+   `__dirname` 深度变了、以及在 `synchronize:true` 下误加载旧 `dist` 产物乱建表。配一条 `ALL_ENTITIES.length === 29` 的单测。
+8. **`useValue` 单实例规则**：provider 实例绑定在声明它的 host module 上，同名 `providers:[X]` 出现在两个 module 会 `new` 两个；
+   统一 `{provide:X, useValue: sameRef}` 则各处拿到同一引用。收口时直接 `git rm *.module.ts`。
+9. **Step M7.4 挂载点**：Express 适配器下 `getHttpServer()` 在 `init()` 前可能返回 express 实例而非 node `http.Server`；
+   socket.io 必须挂真正的 `http.Server`，attach 时机（`init()` 后 / `listen` 前后）需实测确认。
