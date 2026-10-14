@@ -24,8 +24,10 @@ in-process service contracts only.
 | Code language | `CODE_LANGUAGE_REGISTRY` | `CodeLanguageRegistry` | `apps/backend/src/code-language/` |
 | Judge language | `LANGUAGE_REGISTRY` | `LanguageRegistry` | `apps/judge/src/languages/index.ts` |
 | Judge checker | `CHECKER_REGISTRY` | `CheckerRegistry` | `apps/judge/src/checkers/custom/index.ts` |
+| HTTP server | `HTTP` | `HttpServer` | `plugins/http-nest/` |
+| HTTP route | `HTTP_ROUTES` | `HttpRouteRegistry` | `apps/backend/src/plugin/openapi/` |
 
-Other seams (`http`, `database`, `cache`, `storage`, `mail`, …) are added only when an implementation needs them.
+Other seams (`database`, `cache`, `storage`, `mail`, …) are added only when an implementation needs them.
 
 ### Judge language seam
 
@@ -48,6 +50,19 @@ config, the mapped input/output/answer/working paths, the checker source, and th
 Unlike the language seam, this seam exists so a plugin can contribute a checker *interface implementation*, not a
 language. The `OmittableString` wire type is reused from `@libreoj/judge-protocol` rather than re-declared. The builtin
 checkers (`integers`, `floats`, `lines`, `binary`) run through native bindings in `apps/judge` and are out of scope.
+
+### HTTP route seam
+
+`HTTP_ROUTES` (`"httpRoutes"`) names the collector plugins contribute declarative routes to, so an `http` provider can
+reconstruct its routing table **and** its OpenAPI document without the framework that used to own routing. It is the
+declarative companion to the imperative `HTTP` (`"http"`) server seam in `http.ts`.
+
+An `HttpRouteSpec` carries the `method`, the controller+method `path` (without the application's global prefix), the
+OpenAPI `tags` / `summary` / `operationId`, whether the route requires bearer auth, the DTO classes for
+`request.query` / `request.params` / `request.body` and the response, and the `handler`. `defineRoute` is an identity
+helper that pins the type at a definition site, and `HttpRouteRegistry.add` returns a disposer while `list` returns the
+registered routes in order. The types never import a web framework; in `M7.0` the backend's
+`src/plugin/openapi/build-openapi-document.ts` consumes them to emit the OpenAPI document (see the Backend README).
 
 ## Scripts
 

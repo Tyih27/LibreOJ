@@ -47,3 +47,21 @@ Set `LIBREOJ_LOG_SQL=1` to log SQL statements. `LIBREOJ_MIGRATION_CONFIG_FILE` s
 
 `server.clusters: null` runs one process. `server.clusters: 0` runs one worker per CPU, and a positive value selects
 an explicit worker count. Redis coordinates clustered processes.
+
+## OpenAPI generation (transitional)
+
+`src/plugin/openapi/` turns provider-agnostic route specs (`HttpRouteSpec` from `@libreoj/plugin-api`) into an OpenAPI
+3.0 document without a Nest application:
+
+- `build-openapi-document.ts` exports `buildOpenApiDocument(routes, { title, description, version, globalPrefix?, bearerAuth? })`.
+  It accumulates `components.schemas` from the DTO classes referenced by each route, emits `paths[path][method]` path
+  items (parameters, request body, responses, `security`) and reproduces the document envelope. Paths include the
+  global prefix, mirroring the `"api"` prefix the served document uses.
+- `nest-swagger-internals.ts` is the **only** file that deep-imports `@nestjs/swagger`'s internal schema services, which
+  produce the schemas from the `_OPENAPI_METADATA_FACTORY()` the swagger build plugin stamps on each DTO.
+
+This is **transitional**: the module exists so the OpenAPI document can outlive the Nest application while the HTTP
+stack is migrated to a Nest-free provider. The `@nestjs/swagger` coupling is confined to `nest-swagger-internals.ts` so
+it can be replaced when NestJS is removed. `test/openapi-builder.test.ts` checks the output against
+`SwaggerModule.createDocument` for the homepage routes.
+

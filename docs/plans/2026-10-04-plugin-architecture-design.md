@@ -188,8 +188,10 @@ patch:                         # 本 profile 的 patch 层
 | M4 | frontend 构建期组装，迁移首页/导航 | 构建产物含插件注册表 |
 | M5 | 逐域迁移 backend 其余模块，删除硬编码注册表 | 无残留硬编码；seam 全覆盖 |
 | M6 | 分发格式与 profile 模板文档 | 第三方可按文档新增插件 |
+| M7 | 终态移除 NestJS（换 Nest-free `http` Provider + 手动装配 DI） | 后端不再依赖 `@nestjs/*`；`/docs-json` 等价；`pnpm check` 绿 |
 
 > M6（分发格式与 profile 模板文档）的实施范围、交付物与出口证据见 §17。
+> M7（终态移除 NestJS）的决策、子里程碑与风险见 §18。
 
 ## 10. M1 实施计划（子 Agent 逐任务执行）
 
@@ -623,3 +625,84 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **minor（已修）**：文档精度——加载模型（resolver 链而非"内核用 `NodeResolver`"）、seam 表"提供方"列是 bundle 名而非
   可安装包、叠加顺序图补上每个 profile 自带的 `patch`、补全 validator 的错误清单。
 - 保留项：`README.md` 本地开发段落里的真实 bcrypt hash（经确认保留，仅本地开发用）。
+
+## 18. M7 终态移除 NestJS
+
+对应 §9 路线表 **M7**（"终态移除 NestJS"），出口条件：后端不再依赖 `@nestjs/*`；`/docs-json` 与迁移前等价；
+`pnpm check` 绿。§3 已定终态：**内核为唯一组合根，NestJS 降级为 `http` seam 的一个 Provider，终态移除**。
+
+立项日期 2026-10-14。M7 是名副其实的 epic（见 18.1 规模），拆成可独立验证、可提交的子里程碑推进（18.3）。
+
+### 18.0 决策（已拍板 2026-10-14）
+- **迁移策略 = 路由优先、渐进迁移**。利用现有 `plugin-http-nest` 已能在**同一个 Express app** 上同时挂
+  `http` seam 路由与 Nest controller 这一点：逐域把 controller 改写为 seam 路由（Nest 仍提供 DI），DI/OpenAPI 搬完后
+  再换 Nest-free provider、删 Nest。全程应用可运行、每域可独立验证、可提交。**不做 big-bang**。
+- **Nest-free provider 的 HTTP 栈 = Fastify**。新包 `plugins/http-fastify` 实现 `http` seam；全局管线（`api` 前缀、
+  JSON body、限流、鉴权、错误处理、metrics）逐项等价复刻。
+- **DI = 手动装配 + `lazy` Proxy**（10 行零依赖辅助，破环用）。规则：
+  - 业务类**删掉** `@Injectable()` / `@Inject(forwardRef(...))` 装饰器，构造签名与 `this.dep.method()` **不改**。
+  - 无环依赖在组合根直接 `new`；仅循环依赖的**其中一端**包 `lazy(() => other)`，让环**显性**落在装配处。
+  - **不**用"内核 service"作 DI 替代（那更适合后续逐个消灭环路的局部重构）；Awilix 仅在 service 数破百时兜底。
+  - 本仓库现状 37 service / 12 controller，手动装配可行；已知环：`user↔auth`、`problem↔submission`、
+    `user→submission→problem→user`（现由 `forwardRef` 兜）。
+
+### 18.1 现状与规模（2026-10-14 侦察）
+| 项 | 数量 |
+| --- | --- |
+| Controller | 12（共 93 条路由）|
+| Nest 模块 | 28（`AppModule.imports` 仍硬编码 11 个）|
+| `@Injectable` service | 37 |
+| TypeORM 实体 | 29（`@nestjs/typeorm` 32 文件）|
+| 导入 `@nestjs/*` 的文件 | 283 |
+| 导入 `@nestjs/swagger` 的文件 | 201（其中 188 个含 `@ApiProperty`）|
+| class-validator 装饰器 | 617 |
+
+`/docs-json` 由 `SwaggerModule.createDocument(nestApp)` 从 **Nest 路由表**生成；`@nestjs/swagger/plugin` 是
+**构建期**插件（`nest-cli.json`）。前端 `scripts/generate-api.js` 依赖它，且**已生成的首个 API 客户端提交在仓库**，
+可作等价性 oracle（迁移后重新生成，`git diff` 应为空）。
+`@nestjs/swagger@6.0.4` **未导出** `SchemaObjectFactory`（DTO→JSON Schema 是内部 API）——这是 18.4 的头号风险。
+
+### 18.2 硬约束
+1. **`/docs-json` 等价**（前端 API 链不断）；`docs` 标签跳过 `App` / `CORS` 的既有行为保持。
+2. **请求管线等价**：`api` 前缀、`ValidationPipe(transform, whitelist, forbidNonWhitelisted)`、`ErrorFilter` /
+   `RecaptchaFilter`、`AuthMiddleware`、`MetricsMiddleware`、限流、`trust proxy`、`json({limit:"1024mb"})`。
+3. **TypeORM 不变**：实体注册与 `synchronize` 行为不变（只去 Nest 集成，`DataSource` 复用）。
+4. **迁移期共存**：已迁移 seam 路由与残留 Nest controller / Nest DI **共享同一批单例**（infra seam 已登记
+   config/db/redis/lock/storage/mail，正是为此）；组合根仍唯一。
+5. **终态零 Nest**：`apps/backend` 的 `package.json` 删除 `@nestjs/*`（含 `@nestjs/platform-express` /
+   `@nestjs/swagger` / `@nestjs/typeorm`）。
+
+### 18.3 子里程碑
+| 子项 | 内容 | 出口条件 |
+| --- | --- | --- |
+| **M7.0** | provider 无关的**声明式路由 + 校验 + OpenAPI 生成**（去风险 spike 先行）| 对样例路由，DTO→schema 与 path 生成与现网 `/docs-json` 一致 |
+| **M7.1** | `plugins/http-fastify`：实现 `http` seam + 全局管线 | 集成测试用 Fastify 跑通样例 seam 路由，管线等价 |
+| **M7.2** | 手动装配组合根 + `lazy`；infra（config/db/redis/lock/storage/mail）先脱 Nest | 一域服务脱离 Nest DI 可被 seam 路由消费 |
+| **M7.3+** | 逐域迁移（leaf-first，沿用 M5 顺序）：controller→seam 路由、service→手动装配 | 每域功能等价、`/docs-json` 该域部分等价 |
+| **M7.final** | 换 Nest-free provider、删 `AppModule` 与 `http-nest`、清 `@nestjs/*` | `pnpm check` 绿、零 Nest 依赖 |
+
+### 18.4 风险与缓解
+- **OpenAPI 生成（头号）**：`@nestjs/swagger` 的 schema 生成是内部 API。缓解：M7.0 先 spike 三条路径择一——
+  (a) 深引入其内部 `SchemaObjectFactory`；(b) 迁移期**双源合并**（`SwaggerModule.createDocument` 产基底 +
+  自建 path 注入，DTO schema 走 `extraModels` 提取）；(c) 改用 `class-validator-jsonschema`（需新增依赖）。
+  迁移期冻结前端已生成客户端，收口时重新生成并 `git diff` 作等价断言。
+- **循环依赖**：`lazy` 代理化，环显性落在组合根（18.0）；`lazy` 的 getter 必须能容忍"访问时尚未装配"。
+- **管线行为漂移**：Express→Fastify 的 body/错误/限流/middleware 语义差异，逐项测试覆盖。
+- **本仓库无编译器 rootfs / 内存受限**：判题与 hack 无法真机端到端；验证以单测 + `/docs-json` diff + 针对性探测为准，
+  不轻易起整栈（起完即关）。
+
+### 18.5 M7.0 出口证据（2026-10-14）
+- **声明式路由 seam**：`packages/plugin-api/src/http.ts` 增 `HttpRouteSpec` / `HttpRouteRequestSpec` /
+  `defineRoute` / `HTTP_ROUTES` / `HttpRouteRegistry`（纯类型，不引 Nest）。
+- **OpenAPI 生成**：`apps/backend/src/plugin/openapi/` 的 `buildOpenApiDocument(routes, config)`，**无需 Nest app**。
+  唯一耦合点 `nest-swagger-internals.ts` 深引 `@nestjs/swagger/dist/services/{model-properties-accessor,
+  parameters-metadata-mapper,schema-object-factory,swagger-types-mapper}`；依赖编译期插件注入的
+  `_OPENAPI_METADATA_FACTORY()`，故**不需要 `emitDecoratorMetadata`**。`M7.final` 时仅需 vendor/替换这一个文件。
+- **等价性 oracle（已证）**：`apps/backend/test/openapi-builder.test.ts` 用**真实编译后的 `HomepageController`**
+  （构造依赖打桩）在最小 `@Module` 上 `NestFactory.create`（不 listen）→ `setGlobalPrefix("api")` →
+  `SwaggerModule.createDocument(...)`，与 `buildOpenApiDocument` 的产物做 `assert.deepEqual(overTheWire(actual),
+  overTheWire(oracle))`——**整文档（envelope + 全部 schemas + 3 条 homepage path item）深度相等，无 carve-out**。
+- **`api` 前缀**：真实文档的 `paths` 键含全局前缀（`/api/homepage/...`，前端 `generate-api.js` 以
+  `path.replace("/api/","")` 剥离）；builder 默认 `globalPrefix:"api"` 并匹配。
+- **验收**：`plugin-api` build/check-types/test(7)/check-format、`backend` build/check-types/lint/test(**72**，
+  含 4 条新测试) 全绿。备注：测试依赖 `apps/backend/dist`（编译产物携带 metadata factory），先 build 后 test。
