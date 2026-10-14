@@ -603,6 +603,7 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   `libreoj-plugin-validate . --base-dir examples/plugin-example` 退出 0；`libreoj-dump-config examples/plugin-example/profile.example.yaml`
   显示该条目 `state: active`、`config.greeting: hello from the profile`。
 - **workspace / lockfile**：`pnpm-workspace.yaml` 增加 `examples/*`；`pnpm install --frozen-lockfile` 通过
-  （18 个 workspace 工程，新增 `examples/plugin-example` importer）。
+  （18 个 workspace 工程，新增 `examples/plugin-example` importer）。全仓门禁 `pnpm check`（build + check-types +
+  lint + check-format）通过。
 - **文档**：`docs/plugins/{README,distribution-format,authoring,profiles}.md`；根 `README.md` 与 `plugin-core` README 链接；
   §5.4 manifest 描述已修正。
