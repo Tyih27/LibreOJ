@@ -672,14 +672,18 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 5. **终态零 Nest**：`apps/backend` 的 `package.json` 删除 `@nestjs/*`（含 `@nestjs/platform-express` /
    `@nestjs/swagger` / `@nestjs/typeorm`）。
 
-### 18.3 子里程碑
+### 18.3 子里程碑（最终形态，2026-10-14 定稿）
+按「**路由优先**」推进：迁移期由现有 `http-nest`（Express）挂载声明式路由，Nest 只负责存量 controller 与 DI；
+等 OpenAPI 与 DI 都搬完，再换 Nest-free provider、删 Nest。**DI 形态**：单一 `services.ts` 手动装配 + `lazy` 破环
+（§18.0），内核只保留 `HTTP`/`WEBSOCKET`/`*_REGISTRY` 等真扩展点，**不注册业务 Service**。
+
 | 子项 | 内容 | 出口条件 |
 | --- | --- | --- |
-| **M7.0** | provider 无关的**声明式路由 + 校验 + OpenAPI 生成**（去风险 spike 先行）| 对样例路由，DTO→schema 与 path 生成与现网 `/docs-json` 一致 |
-| **M7.1** | `plugins/http-fastify`：实现 `http` seam + 全局管线 | 集成测试用 Fastify 跑通样例 seam 路由，管线等价 |
-| **M7.2** | 手动装配组合根 + `lazy`；infra（config/db/redis/lock/storage/mail）先脱 Nest | 一域服务脱离 Nest DI 可被 seam 路由消费 |
-| **M7.3+** | 逐域迁移（leaf-first，沿用 M5 顺序）：controller→seam 路由、service→手动装配 | 每域功能等价、`/docs-json` 该域部分等价 |
-| **M7.final** | 换 Nest-free provider、删 `AppModule` 与 `http-nest`、清 `@nestjs/*` | `pnpm check` 绿、零 Nest 依赖 |
+| **M7.0 ✅** | 声明式路由 `HttpRouteSpec` + Nest-free OpenAPI 生成 | 已达成（§18.5）|
+| **M7.1** | ① provider 无关管线执行器 `executeHttpRoute`（校验/auth/错误映射）；② 由 `http-nest` 挂载声明式路由；③ 导出 `openapi-baseline.json` 基线快照 | 基线生成脚本可复现；管线单测覆盖校验/鉴权/错误三态 |
+| **M7.2** | 服务层**水平**脱钩：29 实体交 `DataSource`、37 service 收进 `services.ts` 手动装配 + `lazy` 破环，用 `useValue` 桥回 Nest；**12 controller 不动** | `pnpm --filter @libreoj/backend test` 绿；存量 `/docs-json` 与基线 `deepEqual` |
+| **M7.3** | 12 controller **垂直逐个**迁为 `HttpRouteSpec`（leaf-first：`app`/`cors`/`migration`/`judge-client` → `auth`/`user`/`permission` → `problem`/`submission` → `hack`/`discussion`/`group`），含 2 个 socket.io 网关 | 每迁一个 controller 即与基线 `deepEqual`；对应 module 删除 |
+| **M7.final** | 切 `http-fastify`、删 `AppModule`/`http-nest`/`nest-cli.json`；vendor 运行期 swagger + 构建期 swagger 插件；自研 `build.cjs` 取代 `nest build`；清 `@nestjs/*` | `pnpm check` 绿；`pnpm why @nestjs/common` 为空；生成前端客户端 `git diff` 为空 |
 
 ### 18.4 风险与缓解
 - **OpenAPI 生成（头号）**：`@nestjs/swagger` 的 schema 生成是内部 API。缓解：M7.0 先 spike 三条路径择一——
@@ -706,3 +710,30 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   `path.replace("/api/","")` 剥离）；builder 默认 `globalPrefix:"api"` 并匹配。
 - **验收**：`plugin-api` build/check-types/test(7)/check-format、`backend` build/check-types/lint/test(**72**，
   含 4 条新测试) 全绿。备注：测试依赖 `apps/backend/dist`（编译产物携带 metadata factory），先 build 后 test。
+
+### 18.6 避坑清单与终态方案（2026-10-14 经两轮外部评审 + 源码核实）
+
+**HTTP 管线（M7.1 实现 `executeHttpRoute`，provider 无关，http-nest / http-fastify 复用）**
+- 顺序：`AuthMiddleware（挂 req.user，不拦截）→ Guard（先于校验）→ 校验（whitelist+forbidNonWhitelisted+transform）→ handler → 错误映射`。
+- 校验要匹配 `ValidationPipe`：`plainToInstance(Dto, body ?? {})`；`forbidNonWhitelisted` 的错误结构照搬 `flattenValidationErrors`。
+- 本仓库面很小：**无自定义 Guard/Interceptor/Pipe**，只有 `ErrorFilter`/`RecaptchaFilter` 两个 filter；**无 multer**；`@Body(`78 / `@Query(`7 / `@Param(`1（string）。→ 不必实现通用 Guard/Interceptor 调度链。
+- `http-fastify` 初始化时挂 `querystringParser: str => qs.parse(str)`，保住那 7 处 `@Query` 与 Express 一致。
+
+**WebSocket（M7.3，2 个 socket.io 网关，已读源码核实）**
+- **必须只有一个 `new Server(httpServer, { path: "/api/socket", ... })`**（两个 engine.io server 同 path 会互相拦截握手）；两网关靠 `io.of(namespace)` 区分，**同一 commit 一起迁移**。
+- **`@WebSocketGateway({namespace})` 时 `@WebSocketServer()` 注入的是 `Namespace` 而非根 `Server`**（`@nestjs/websockets` 的 `decorateWithNamespace`）。
+- **ack 只在 `!isNil(result)` 时触发**（`@nestjs/platform-socket.io` 的 `io-adapter.js` `filter(r => !isNil(r))`）：`null` **不**触发，`[]` 触发；返回值含 `.event` 字段则改走 `socket.emit(event,data)`。
+- 无 body 的事件（如 `requestUploadUrl`），Socket.IO 首参即 ack（`mapPayload`）。
+- 迁移时**先同步绑 message/disconnect 再 `await handleConnection`**（Nest 原实现是 fire-and-forget 调 `handleConnection`，存在 await 期间丢 disconnect 的竞态；这是有意的改进，非等价复刻）。
+- 存量 bug：`submission-progress.gateway.ts:152` 的 `this.server.sockets[client]`（socket.io v4 里 `sockets` 是 Map，方括号取值恒 `undefined`，该 disconnect 分支永不执行）→ 迁移时改为 `this.server.sockets.get(client)?.disconnect()`。
+
+**DI（M7.2）**
+- `services.ts` 惰性 getter + `lazy()` 破环，24 处 `forwardRef`（全在 service 层）集中于此；`singleton()` 需**重入哨兵**（factory 返回后才写缓存，否则漏包 `lazy` 会爆栈）。
+- 多 profile 的边界：核心域是强连通闭合图，禁用某域插件的作用是**不挂载其路由/WS 命名空间/生命周期钩子**，而非物理裁剪 service 实例。
+
+**OpenAPI / 构建期（M7.final）**
+- 基线 `openapi-baseline.json`：用「全 12 controller + `Reflect.getMetadata('design:paramtypes')` + `noopProxy` 桩 provider」的最小 Nest 脚本生成（`SwaggerModule.createDocument` 无需 `init`/`listen`），再用 `scripts/generate-api.js` 反向 `git diff` 验真。
+- **保留 `emitDecoratorMetadata`**（构建照常产出、测试走 `dist`），不追「tsx 直跑源码」。
+- vendor 拆两个 bundle：运行期（`ModelPropertiesAccessor`/`SchemaObjectFactory`/`SwaggerTypesMapper` + `ApiProperty*`/`PartialType` 等）与构建期（`before` AST 插件）——后者会拖进 `typescript`/`lodash`，**绝不进运行期产物**。
+- 终态取「**vendor 构建期插件**」而非「ts-morph 固化 `_OPENAPI_METADATA_FACTORY` 回 188 个 DTO 源码」：后者把编译器保证的不变量退化成人工双写，改 DTO 即静默漂移。
+- **自研 `build.cjs` 取代 `nest build` 时必须补 asset 拷贝**：`nest-cli.json` 的 `assets: ["**/*.ejs","**/*.lua"]` 对应 **9 个邮件模板 `.ejs` + 3 个 `.lua`（redis 锁/会话脚本）**，运行时按 `__dirname` 相对路径 `readFileSync`，不发到 `dist/` 会 ENOENT 崩。`tsconfig.build.json` 无 `incremental`，要增量需自行加 `incremental`/`tsBuildInfoFile`。
