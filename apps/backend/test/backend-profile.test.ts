@@ -16,8 +16,12 @@ test("the backend profile lists exactly the declared bundles, in load order", ()
   const { plugins, warnings } = resolveConfig(composeLayers({ profile: PROFILE }));
 
   assert.deepEqual(warnings, []);
+
+  // Only the `"bundles"`-sourced entries must match the declared set exactly and in order. Entries under `plugins:`
+  // are out-of-tree additions the host resolves from the filesystem (via `NodeResolver` in the resolver chain), so a
+  // third party may list extra plugins in the profile; those must not be forced to match `BACKEND_BUNDLE_NAMES`.
   assert.deepEqual(
-    plugins.map(plugin => plugin.name),
+    plugins.filter(plugin => plugin.source === "bundles").map(plugin => plugin.name),
     [...BACKEND_BUNDLE_NAMES]
   );
 

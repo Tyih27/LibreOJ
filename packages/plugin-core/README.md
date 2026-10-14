@@ -186,6 +186,19 @@ interface PluginDefinition<TConfig = Record<string, unknown>> {
   读取（支撑 `PluginHost.reload`）；Node 的 ESM 加载器没有缓存失效接口，故 `fresh` 对 ESM 无效，重载后的 ESM 插件
   仍是首次求值的实例（已在源码注释说明）。
 
+### ChainResolver
+
+`ChainResolver`（`src/chain-resolver.ts`）把一组 `ModuleResolver` 串成有序链，按顺序尝试、**返回第一个成功**：
+
+- 依序调用 `resolvers[0]`、`resolvers[1]`……当前解析器**同步抛错**或返回的 **promise reject** 时前进到下一个；一旦
+  返回值（同步结果或已 resolve 的 promise）即短路返回，不再探测后续解析器；
+- 全部失败时重新抛出**最后一个**错误，因为它最具体（例如文件系统 `NodeResolver` 的 "Cannot resolve plugin …"）；
+- 返回类型仍是 `PluginDefinition | Promise<PluginDefinition>`（内部 `await` 统一处理同步 / 异步两种结果，内核也统一
+  `await`）。
+
+它让宿主用内存表解析**内置 bundle**、其余走**文件系统**：profile 里出现一个内存表不认识的条目时会回退到文件系统解析，
+而不是直接终止启动，因此第三方无需改动宿主代码即可通过 profile 启用已安装的插件。
+
 ### 依赖门控与 start
 
 门控由内核 `FiberManager` 承担；`PluginHost`（`src/host.ts`）退化为按 profile 装载的 loader：`resolveConfig` →
@@ -340,11 +353,11 @@ libreoj-plugin-validate <name-or-path> [--base-dir <dir>] [--json]
   `error: …` 与 `warning: …`，最后一行 `ok` 或 `failed`。
 - `--json` 打印完整 `PluginValidationResult`（缩进 2 空格）到 stdout。
 - 退出码：`ok` 为 true 时 0，否则 1；参数缺失、未知选项或 `--base-dir` 缺值时写 stderr 并返回 1。
-- **error（致命，`ok: false`）**：找不到 `package.json`；`libreoj` manifest 不是对象，或它的 `entry` 不是字符串 /
-  `config` 不是对象；入口无法解析；模块未导出可用的 `PluginDefinition`
-  （须为带字符串 `name` 与函数 `apply` 的对象，或具名函数）；`definition.name` 为空 / 仅空白；
-  `inject.required` / `inject.optional` 或 `provide` 存在但不是字符串数组；`config.defaults` 存在但不是普通对象；
-  `config.parse` 存在但不是函数。
+- **error（致命，`ok: false`）**：找不到 `package.json`，或它无法读取（不是合法 JSON / 不是 JSON 对象）；`libreoj`
+  manifest 不是对象，或它的 `entry` 不是字符串 / `config` 不是对象；入口无法解析；模块未导出可用的 `PluginDefinition`
+  （须为带字符串 `name` 与函数 `apply` 的对象，或具名函数）；`definition.name` 为空 / 仅空白；`inject` 存在但不是
+  对象，或 `inject.required` / `inject.optional`、`provide` 存在但不是字符串数组；`config.defaults` 存在但不是普通
+  对象；`config.parse` 存在但不是函数。
 - **warning（不致命，不影响 `ok`）**：包未声明 `libreoj.entry`（回退到 `main`）；按包名发起请求时定义的 `name`
   与 `requested` 不一致（本地路径请求不告警）；定义未声明 `config` schema。
 

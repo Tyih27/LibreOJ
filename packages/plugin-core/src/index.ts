@@ -11,6 +11,7 @@ export { Fiber, FiberManager } from "./fiber";
 export type { FiberManagerOptions } from "./fiber";
 export { PluginHost } from "./host";
 export type { PluginHostOptions, PluginRecord } from "./host";
+export { ChainResolver } from "./chain-resolver";
 export { NodeResolver } from "./node-resolver";
 export type { NodeResolverOptions } from "./node-resolver";
 export type { PluginManifest } from "./manifest";

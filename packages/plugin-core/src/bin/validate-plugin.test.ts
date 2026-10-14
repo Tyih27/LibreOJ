@@ -82,6 +82,15 @@ test("prints usage and returns non-zero when --base-dir has no value", async () 
   assert.match(stderr, /Usage:/);
 });
 
+test("prints usage and returns non-zero when --base-dir's value is another option", async () => {
+  const { code, stdout, stderr } = await run(["--base-dir", "--json", "target"]);
+
+  assert.notEqual(code, 0);
+  assert.equal(stdout, "");
+  assert.match(stderr, /--base-dir requires a directory/);
+  assert.match(stderr, /Usage:/);
+});
+
 test("parses --base-dir and --json together", () => {
   const parsed = parseArguments(["plugin", "--base-dir", "/tmp/base", "--json"]);
   assert.deepEqual(parsed, { target: "plugin", baseDir: "/tmp/base", json: true });

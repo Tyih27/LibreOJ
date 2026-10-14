@@ -32,9 +32,16 @@ export function findPackageJson(start: string): string | undefined {
   }
 }
 
-/** Reads and parses a `package.json`. Throws when the file is missing or not valid JSON. */
+/**
+ * Reads and parses a `package.json`. Throws when the file is missing, is not valid JSON, or does not contain a JSON
+ * object (a bare `null`, array, or primitive is rejected rather than surfaced as a confusing property access).
+ */
 export function readPackageJson(packageJsonPath: string): PluginPackageJson {
-  return JSON.parse(readFileSync(packageJsonPath, "utf8")) as PluginPackageJson;
+  const parsed: unknown = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  if (!isPlainObject(parsed)) {
+    throw new Error(`Invalid package.json at "${packageJsonPath}": expected a JSON object.`);
+  }
+  return parsed as PluginPackageJson;
 }
 
 /**

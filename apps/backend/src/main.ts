@@ -9,7 +9,14 @@ import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 
 import { HTTP } from "@libreoj/plugin-api";
 import { codeLanguagePlugin } from "@libreoj/plugin-code-language";
-import { composeLayers, InlineResolver, PluginHost, type PluginDefinition } from "@libreoj/plugin-core";
+import {
+  ChainResolver,
+  composeLayers,
+  InlineResolver,
+  NodeResolver,
+  PluginHost,
+  type PluginDefinition
+} from "@libreoj/plugin-core";
 import {
   createHttpNestPlugin,
   type HttpNestServer,
@@ -192,8 +199,15 @@ async function bootstrap() {
   // through `getPluginHost()`. The root module is `AppModule` with the domain plugins' contributed modules appended:
   // Nest merges a DynamicModule's `imports` with the target module's static imports (`@nestjs/core` scanner), so
   // returning `{ module: AppModule, imports }` is additive and preserves the `AppModule` token/singleton.
+  //
+  // The resolver is a chain: in-tree bundles come from the in-memory map; a profile entry the map does not know is
+  // resolved from the filesystem relative to the backend package root, so a third party can enable an installed plugin
+  // through the profile without editing this file.
   const host = new PluginHost({
-    resolver: new InlineResolver({ ...backendBundles }),
+    resolver: new ChainResolver([
+      new InlineResolver({ ...backendBundles }),
+      new NodeResolver({ baseDir: path.resolve(__dirname, "..") })
+    ]),
     failureMode: "fatal"
   });
 

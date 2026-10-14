@@ -19,7 +19,9 @@ export function parseArguments(argv: string[]): Arguments {
     const argument = argv[index];
     if (argument === "--base-dir") {
       const value = argv[++index];
-      if (value === undefined) throw new Error(`--base-dir requires a directory\n${USAGE}`);
+      if (value === undefined || value.startsWith("-")) {
+        throw new Error(`--base-dir requires a directory\n${USAGE}`);
+      }
       baseDir = value;
     } else if (argument === "--json") {
       json = true;

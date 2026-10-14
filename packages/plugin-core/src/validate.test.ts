@@ -88,3 +88,13 @@ test("rejects a non-object libreoj.config", async () => {
   assert.equal(result.ok, false);
   assert.ok(result.errors.some(error => /libreoj\.config must be an object/.test(error)));
 });
+
+test("returns a failed result instead of throwing when package.json is not a JSON object", async () => {
+  // Node's directory resolution already rejects a `null` package.json, so point at a file in the package to reach
+  // validatePlugin's shared `readPackageJson` step with the malformed manifest.
+  const result = await validatePlugin("./fixtures/bad-package-json/package.json", { baseDir: packageDir });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.length > 0);
+  assert.match(result.errors.join("\n"), /expected a JSON object/);
+});

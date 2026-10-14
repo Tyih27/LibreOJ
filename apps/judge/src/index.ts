@@ -4,7 +4,7 @@ import "reflect-metadata";
 import * as path from "node:path";
 
 import * as winston from "winston";
-import { InlineResolver, PluginHost, composeLayers } from "@libreoj/plugin-core";
+import { ChainResolver, composeLayers, InlineResolver, NodeResolver, PluginHost } from "@libreoj/plugin-core";
 
 import { checkersPlugin } from "./plugin/checkers.plugin";
 import { compilePlugin } from "./plugin/compile.plugin";
@@ -41,18 +41,25 @@ const JUDGE_CONSUMER_BUNDLE = "@libreoj/judge-consumer";
 // once it applies. During `load` the RPC plugin's `start` awaits the connection (`rpc.connect`), and only afterwards
 // does the consumer plugin's `start` fire the task consumer threads. Both are plugin responsibilities now; this entry
 // point no longer connects the RPC client or spawns the threads itself.
+//
+// The resolver is a chain: the bundles above come from the in-memory map; a profile entry the map does not know is
+// resolved from the filesystem relative to the judge package root, so a third party can enable an installed plugin
+// through the profile without editing this file.
 const host = new PluginHost({
-  resolver: new InlineResolver({
-    [JUDGE_CONFIG_BUNDLE]: configPlugin,
-    [JUDGE_LANGUAGES_BUNDLE]: languagesPlugin,
-    [JUDGE_CHECKERS_BUNDLE]: checkersPlugin,
-    [JUDGE_TASK_QUEUE_BUNDLE]: taskQueuePlugin,
-    [JUDGE_RPC_BUNDLE]: rpcPlugin,
-    [JUDGE_SANDBOX_BUNDLE]: sandboxPlugin,
-    [JUDGE_FILE_BUNDLE]: filePlugin,
-    [JUDGE_COMPILE_BUNDLE]: compilePlugin,
-    [JUDGE_CONSUMER_BUNDLE]: consumerPlugin
-  }),
+  resolver: new ChainResolver([
+    new InlineResolver({
+      [JUDGE_CONFIG_BUNDLE]: configPlugin,
+      [JUDGE_LANGUAGES_BUNDLE]: languagesPlugin,
+      [JUDGE_CHECKERS_BUNDLE]: checkersPlugin,
+      [JUDGE_TASK_QUEUE_BUNDLE]: taskQueuePlugin,
+      [JUDGE_RPC_BUNDLE]: rpcPlugin,
+      [JUDGE_SANDBOX_BUNDLE]: sandboxPlugin,
+      [JUDGE_FILE_BUNDLE]: filePlugin,
+      [JUDGE_COMPILE_BUNDLE]: compilePlugin,
+      [JUDGE_CONSUMER_BUNDLE]: consumerPlugin
+    }),
+    new NodeResolver({ baseDir: path.resolve(__dirname, "..") })
+  ]),
   failureMode: "fatal"
 });
 

@@ -66,11 +66,12 @@ function resolveEntryFile(name: string, baseDir: string): string | undefined {
  * throwing. The definition is loaded through {@link NodeResolver}, so ESM entries load via dynamic `import()` and
  * CommonJS entries via `require`, using the same `libreoj.entry` → `main` → resolved file selection as the resolver.
  *
- * Fatal errors: the package or its entry cannot be resolved; there is no `package.json`; the `libreoj` manifest is not
- * an object or its `entry`/`config` fields have the wrong type; the module does not export a usable
- * `PluginDefinition` (an object with a string `name` and a function `apply`, or a named function); the definition's
- * `name` is empty/whitespace; `inject.required`/`inject.optional` or `provide` are present but not arrays of strings;
- * `config.defaults` is present but not a plain object; `config.parse` is present but not a function.
+ * Fatal errors: the package or its entry cannot be resolved; there is no `package.json` or it cannot be read (invalid
+ * JSON, or not a JSON object); the `libreoj` manifest is not an object or its `entry`/`config` fields have the wrong
+ * type; the module does not export a usable `PluginDefinition` (an object with a string `name` and a function `apply`,
+ * or a named function); the definition's `name` is empty/whitespace; `inject` is present but not an object, or
+ * `inject.required`/`inject.optional` or `provide` are present but not arrays of strings; `config.defaults` is present
+ * but not a plain object; `config.parse` is present but not a function.
  *
  * Warnings: the package has no `libreoj.entry` (falling back to `main`); a package-name-style `requested` differs
  * from the definition's `name`; the definition declares no `config` schema.
