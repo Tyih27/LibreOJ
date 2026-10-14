@@ -1,7 +1,8 @@
 # 分发格式
 
 一个 LibreOJ 插件就是一个 **npm 包**（workspace 成员或可发布到 registry 的独立包），加上 `package.json` 里的一段
-`libreoj` 声明。内核通过 `NodeResolver` 从文件系统加载它，解析规则如下。
+`libreoj` 声明。内核本身不关心加载方式（`ModuleResolver` 抽象）；随附的 backend / judge 主机用一条
+`ChainResolver`：已知的在仓 bundle 从内存映射表取，其余名字回退到 `NodeResolver`，按下面的规则从文件系统解析。
 
 ## `package.json` 的 `libreoj` manifest
 
@@ -85,19 +86,22 @@ CommonJS。
 - 官方插件用 `@libreoj/*` scope（backend 域、judge、http provider……）。
 - 第三方插件可用任意包名。**不要**占用 `@libreoj/*`，以免与官方包冲突。
 
-## 分发方式
+## 分发与挂载
 
-包只要能被 `NodeResolver` 从 profile 所在的基础目录解析到即可，两种形态都行：
+主机（backend / judge）用 `NodeResolver` 从**自身包根**解析 profile 里的名字：backend 是 `apps/backend`、judge 是
+`apps/judge`。以 `.` 开头或绝对路径按路径解析，其它按包名 `require.resolve(name, { paths: [包根] })`。因此：
 
-| 形态 | 放法 | profile 里怎么引用 |
+| 形态 | 怎么放 | profile 里怎么引用 |
 | --- | --- | --- |
-| workspace 成员 | 放进本仓库 `plugins/*` 或 `examples/*`（`pnpm-workspace.yaml` 已包含这两个 glob） | 直接写包名，如 `"libreoj-plugin-example"` |
-| 本地目录 | 任意路径 | 相对/绝对路径，如 `"./my-plugins/foo"`（相对 profile 文件所在目录解析） |
-| 已发布的包 | 装进使用方的 `node_modules` | 写包名 |
+| 作为 host 的依赖（推荐） | 把包声明为 `apps/backend`（或 `apps/judge`）的依赖并安装，它会进 host 的 `node_modules` | 包名，如 `"libreoj-plugin-example"` |
+| 本地目录 | 放在任意路径 | 相对 **host 包根**的路径（或绝对路径），如 `"../my-plugins/foo"` |
 
-`profiles/*.yaml` 默认随仓库分发；站点可以带自己的 profile（见
-[profiles.md](profiles.md)）。内置 profile 中与本仓库产物相关的条目用相对路径解析，因此 profile 与其本地插件一起
-移动。
+**只要把包列进 profile 的 `plugins:` 即可，不必改 host 代码**：host 的 resolver 链先查在仓 bundle，未命中就用
+`NodeResolver` 从文件系统兜底。仓库内的 `plugins/*`、`examples/*` 是 workspace 成员，但要能**按包名**加载仍需它是
+host 的依赖（或用路径引用）。
+
+> `libreoj-dump-config` 是开发工具，它相对 **profile 文件所在目录**解析本地插件路径（因此 profile 与其本地插件可以
+> 一起移动）；站点运行时主机则一律相对 host 包根。
 
 ## 自查
 

@@ -593,11 +593,14 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - **校验命令**：`packages/plugin-core` 的 `libreoj-plugin-validate` CLI + `validatePlugin()`（结构化诊断），单测覆盖。
 - **示例包**：`examples/plugin-example`（TS→CJS + `libreoj` manifest + README + `profile.example.yaml` + 加载测试）。
 
-### 17.3 出口证据
+### 17.3 出口证据（含 17.4 修复后）
 - **校验命令**（`packages/plugin-core`）：`libreoj-plugin-validate` 随包分发；`pnpm --filter @libreoj/plugin-core build / check-types / test / check-format`
-  全绿（**205** 个测试通过，含新增的 `validate.test.ts` 与 bin 测试）。对合法包 `fixtures/demo/provides` 退出 0 并打印
+  全绿（**215** 个测试通过，含 `validate` / `manifest` / bin 测试与 `ChainResolver` 测试）。对合法包 `fixtures/demo/provides` 退出 0 并打印
   `definition / entry / module / ok`；对坏包（`fixtures/does-not-exist`、`bad-export`、`bad-inject`、`bad-manifest`、
-  `bad-manifest-entry`、`bad-manifest-config`）退出 1 并给出可操作报错。
+  `bad-manifest-entry`、`bad-manifest-config`、`bad-package-json`）退出 1 并给出可操作报错。
+- **外部插件可经 profile 加载**：backend / judge 的 host 改用 `ChainResolver`（在仓 bundle 走 `InlineResolver`，未命中回退
+  `NodeResolver`，baseDir = host 包根），`backend-profile.test.ts` 只强制 `source === "bundles"` 的条目等于 `BACKEND_BUNDLE_NAMES`；
+  `pnpm --filter @libreoj/plugin-core test`、`--filter @libreoj/backend test`（68）/`lint`/`check-types`、`--filter @libreoj/judge check-types`/`lint` 全绿。
 - **示例包**（`examples/plugin-example`）：`libreoj-plugin-example` 可被 `NodeResolver` 加载；`pnpm --filter libreoj-plugin-example
   build / check-types / test / check-format` 全绿（2 个测试：profile 覆盖生效 + manifest/default 回落）。
   `libreoj-plugin-validate . --base-dir examples/plugin-example` 退出 0；`libreoj-dump-config examples/plugin-example/profile.example.yaml`
@@ -607,3 +610,16 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
   lint + check-format）通过。
 - **文档**：`docs/plugins/{README,distribution-format,authoring,profiles}.md`；根 `README.md` 与 `plugin-core` README 链接；
   §5.4 manifest 描述已修正。
+
+### 17.4 审查与修复（2026-10-14）
+对 `4bb98759` 做了一轮对抗式审查，发现并修复三类问题：
+- **blocker（已修）**：文档承诺"往 profile 列包 + 重启即可"，但 backend / judge 用闭合的 `InlineResolver`，未知名字在
+  `failureMode: "fatal"` 下直接终止启动——与 §2 验收标准 #1"装插件不改核心"冲突。修复：新增 `ChainResolver`
+  （`packages/plugin-core/src/chain-resolver.ts`），host 先查在仓 bundle、未命中回退 `NodeResolver`（baseDir = host 包根）；
+  放宽 profile 守卫。文档相应改写为"装成 host 依赖 / 用路径 + 列进 profile，不必改 host 代码"。
+- **major（已修）**：`validatePlugin` 在 `package.json` 内容为 `null`/数组/标量时抛 `TypeError`，违背"永不抛错"。
+  修复：`readPackageJson` 统一守卫（`isPlainObject`，否则抛带路径的清晰错误），`NodeResolver` 与 validator 共享，后者
+  转为 `ok: false`。顺带修 `--base-dir` 把后续选项当目录值的解析缺陷。
+- **minor（已修）**：文档精度——加载模型（resolver 链而非"内核用 `NodeResolver`"）、seam 表"提供方"列是 bundle 名而非
+  可安装包、叠加顺序图补上每个 profile 自带的 `patch`、补全 validator 的错误清单。
+- 保留项：`README.md` 本地开发段落里的真实 bcrypt hash（经确认保留，仅本地开发用）。

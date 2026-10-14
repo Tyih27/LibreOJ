@@ -89,7 +89,8 @@ PNPM_CONFIG_PM_ON_FAIL=ignore pnpm --filter libreoj-plugin-example build
 
 ### 5. 挂进 profile
 
-在 profile 的 `plugins:`（或 `bundles:`）里列出来：
+先把包装成 host 的依赖（backend 装进 `apps/backend`、judge 装进 `apps/judge`），这样 host 才能按包名解析到它；
+然后把它列进 profile 的 `plugins:`（或 `bundles:`）：
 
 ```yaml
 active: web
@@ -102,7 +103,9 @@ profiles:
 ```
 
 `bundles:` 与 `plugins:` 都会加载；区别只是来源标签（`bundles` / `plugins`），以及 `bundles` 惯例上用于官方
-bundle。被 `config` / `patch` 覆盖的键按 profile 的层序深合并。
+bundle。被 `config` / `patch` 覆盖的键按 profile 的层序深合并。host 的解析器先查在仓 bundle，未命中就用
+`NodeResolver` 从文件系统兜底，因此**列进 profile 即可，不必改 host 代码**（详见
+[distribution-format.md](distribution-format.md#分发与挂载)）。
 
 ### 6. 验证
 
@@ -117,7 +120,7 @@ libreoj-dump-config profiles/backend.yaml        # 打印实际生效的插件�
 ### 7. 写测试
 
 插件包应带自己的测试。常见做法是直接 import 自己的定义断言行为，或（更接近真实加载）用 `PluginHost` +
-`NodeResolver` 加载内置 profile 断言结果——见示例包的 `src/index.test.ts`。
+`NodeResolver` 加载示例 profile 断言结果——见示例包的 `src/index.test.ts`。
 
 ## 接在哪：seam 目录
 
@@ -125,7 +128,9 @@ libreoj-dump-config profiles/backend.yaml        # 打印实际生效的插件�
 
 ### 跨 Backend–Judge seam（`@libreoj/plugin-api`）
 
-契约在 leaf 包 `@libreoj/plugin-api` 里，backend、judge 及构建期前端可共享，外部插件可安全依赖：
+契约在 leaf 包 `@libreoj/plugin-api` 里，backend、judge 及构建期前端可共享，外部插件可安全依赖。下表"提供方"
+是注册该 service 的 **bundle 名**（host profile 里列的标识），不一定等同于可单独安装的 npm 包——
+`@libreoj/plugin-code-language`、`@libreoj/plugin-http-nest` 恰好两者同名：
 
 | Service 名（常量） | 接口 | 谁提供 | 典型消费方 |
 | --- | --- | --- | --- |
@@ -145,7 +150,7 @@ libreoj-dump-config profiles/backend.yaml        # 打印实际生效的插件�
 这些是 backend 进程内部的服务，契约就是服务自身的类型（未镜像到 `plugin-api`）。加载进 backend 的插件可以
 `inject.required` 它们：
 
-| Service 名（常量） | 类型 | 提供方 |
+| Service 名（常量） | 类型 | 提供方（bundle） |
 | --- | --- | --- |
 | `backendConfig`（`BACKEND_CONFIG`） | `ConfigService` | `@libreoj/backend-infra` |
 | `backendDatabase`（`BACKEND_DATABASE`） | `DataSource` | `@libreoj/backend-infra` |
@@ -157,8 +162,9 @@ libreoj-dump-config profiles/backend.yaml        # 打印实际生效的插件�
 | `problemTypeRegistry`（`PROBLEM_TYPE_REGISTRY`） | `ProblemTypeRegistry` | `@libreoj/backend-problem-type-registry` |
 | `backendDomainModules`（`BACKEND_DOMAIN_MODULES`） | `BackendDomainModules` | `@libreoj/backend-domain-modules` |
 
-> 这些类型定义在 `apps/backend` 内，因此**外部包**要接它们需要依赖 backend 包（非 workspace 场景不推荐）。真正
-> 稳定、跨端、可独立分发的扩展点是上面的 `@libreoj/plugin-api` seam。
+> 表中"提供方"是 backend profile 里注册该 service 的 **bundle 名**（如 `@libreoj/backend-infra`），不是可单独安装
+> 的 npm 包。这些类型定义在 `apps/backend` 内，因此**外部包**要接它们需要依赖 backend 包（非 workspace 场景不
+> 推荐）。真正稳定、跨端、可独立分发的扩展点是上面的 `@libreoj/plugin-api` seam。
 
 ### 贡献一个后端域（`backendDomainModules`）
 

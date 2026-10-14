@@ -68,10 +68,13 @@ config:
 
 ## 叠加顺序（后者覆盖前者）
 
+条目登记：所有层的 `bundles` / `plugins` 按"**首次出现**去重"汇总，与层序无关（先出现的层决定条目位置与来源）。
+
+配置层序（后者覆盖前者），每个 profile 层先 `config` 后它自带的 `patch`：
+
 ```
 profile extends 链（base 在前）
-  → 被选 profile 的 bundles / plugins / config
-  → 被选 profile 自带的 patch
+  base.config → base.patch → … → 选中 profile.config → 选中 profile.patch
   → 站点 patch（LIBREOJ_PATCH_FILE）
   → CLI --patch 文件（按出现顺序，可多次；dump-config 用）
 ```
@@ -109,6 +112,9 @@ patch:
 
 ### 引入一个第三方插件
 
+1. 把包装成 backend 的依赖：`pnpm --filter @libreoj/backend add libreoj-plugin-example`（或从本地路径安装）。
+2. 在 profile 里启用并覆盖配置：
+
 ```yaml
 # site-patch.yaml
 patch:
@@ -130,6 +136,9 @@ LIBREOJ_BACKEND_PROFILE=$PWD/my-profile.yaml \
 LIBREOJ_PATCH_FILE=$PWD/site-patch.yaml \
 pnpm --filter @libreoj/backend dev
 ```
+
+host 的解析器先查在仓 bundle，未命中就用 `NodeResolver` 从 `apps/backend` 兜底加载，因此**列进 profile 即可，不必
+改 host 代码**。若不装成依赖，也可在 `plugins:` 里写相对 `apps/backend` 或绝对路径。
 
 ### 保留官方 profile，只做最小覆盖
 

@@ -40,7 +40,7 @@ export const plugin: PluginDefinition = {
 };
 ```
 
-然后在 profile 的 `plugins:` 里列出它，重启即可生效：
+把它装成 backend（或 judge）的依赖，再在 profile 的 `plugins:` 里列出它，重启即可生效——**不需要改 host 代码**：
 
 ```yaml
 active: web
