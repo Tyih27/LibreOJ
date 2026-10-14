@@ -714,7 +714,9 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 ### 18.6 避坑清单与终态方案（2026-10-14 经两轮外部评审 + 源码核实）
 
 **HTTP 管线（M7.1 实现 `executeHttpRoute`，provider 无关，http-nest / http-fastify 复用）**
-- 顺序：`AuthMiddleware（挂 req.user，不拦截）→ Guard（先于校验）→ 校验（whitelist+forbidNonWhitelisted+transform）→ handler → 错误映射`。
+- 顺序（针对 Nest 原生路由）：`AuthMiddleware（挂 req.session，不拦截）→ Guard（先于校验）→ 校验（whitelist+forbidNonWhitelisted+transform）→ handler → 错误映射`。
+- **迁移期 seam 路由不经 Nest 中间件/filter（已读源码核实）**：`NestFactory.create` **不**调 `init()`（`@nestjs/core/nest-application.js`），Nest 中间件在 `init()`（即 `listen()` 时）才绑定，而 http-nest 的 `app.use(router)` 早于它 → seam 路由**看不到** `AuthMiddleware` 的 `req.session`，也不在 `AsyncLocalStorage` 上下文里。故 **M7.3 迁移需要鉴权的路由时，必须在 seam 层补 auth 中间件（或管线内解析 session），不能依赖 Nest 的 `AuthMiddleware`**。M7.1 已把此列为 M7.3 前置项（`pipeline.ts` 只转发 session）。
+- seam 路由的错误也不触发 `ErrorFilter` 的 metrics/event-report 副作用（桥接只映射 status/body）——M7.3 或后续补齐。
 - 校验要匹配 `ValidationPipe`：`plainToInstance(Dto, body ?? {})`；`forbidNonWhitelisted` 的错误结构照搬 `flattenValidationErrors`。
 - 本仓库面很小：**无自定义 Guard/Interceptor/Pipe**，只有 `ErrorFilter`/`RecaptchaFilter` 两个 filter；**无 multer**；`@Body(`78 / `@Query(`7 / `@Param(`1（string）。→ 不必实现通用 Guard/Interceptor 调度链。
 - `http-fastify` 初始化时挂 `querystringParser: str => qs.parse(str)`，保住那 7 处 `@Query` 与 Express 一致。
@@ -737,3 +739,18 @@ ESLint 仅在 `apps/*` 使用）；测试用 `node:test` + `tsx`；所有 pnpm �
 - vendor 拆两个 bundle：运行期（`ModelPropertiesAccessor`/`SchemaObjectFactory`/`SwaggerTypesMapper` + `ApiProperty*`/`PartialType` 等）与构建期（`before` AST 插件）——后者会拖进 `typescript`/`lodash`，**绝不进运行期产物**。
 - 终态取「**vendor 构建期插件**」而非「ts-morph 固化 `_OPENAPI_METADATA_FACTORY` 回 188 个 DTO 源码」：后者把编译器保证的不变量退化成人工双写，改 DTO 即静默漂移。
 - **自研 `build.cjs` 取代 `nest build` 时必须补 asset 拷贝**：`nest-cli.json` 的 `assets: ["**/*.ejs","**/*.lua"]` 对应 **9 个邮件模板 `.ejs` + 3 个 `.lua`（redis 锁/会话脚本）**，运行时按 `__dirname` 相对路径 `readFileSync`，不发到 `dist/` 会 ENOENT 崩。`tsconfig.build.json` 无 `incremental`，要增量需自行加 `incremental`/`tsBuildInfoFile`。
+
+### 18.7 M7.1 出口证据（2026-10-14）
+- **管线**：`apps/backend/src/plugin/http/pipeline.ts` — `validateDto`（`plainToInstance` 非隐式转换 + `class-validator` 的
+  `whitelist`/`forbidNonWhitelisted`）、`flattenValidationErrors`（逐字对齐 Nest 9.0.7，含嵌套 DTO 的点号前缀）、
+  `mapThrownError`（鸭子类型认 `getStatus`/`getResponse`，否则发 `ErrorFilter` 的 `500 {error,stack}`）、
+  `executeHttpRoute(spec, {request, response})`：校验 `spec.request.{body,query,params}` 后以归一化请求调用 handler。
+- **桥接插件**：`apps/backend/src/plugin/http-routes.plugin.ts`（`@libreoj/backend-http-routes`）provide `HTTP_ROUTES`、
+  inject `HTTP`，在 `apply` 的 `add` 时即挂载到 seam（因 `http-nest` 的 `start` 会冻结 router）；`withApiPrefix` 自补 `/api`
+  （`setGlobalPrefix` 不影响 `app.use(router)`，已核实）。已接入 `bundles.ts`/`main.ts`/`profiles/backend.yaml`（零路由，机制即活）。
+  说明：插件不能 `inject.required` 自己 `provide` 的服务（内核 `Fiber.missingRequired` 会永久挂起）。
+- **OpenAPI 基线**：`apps/backend/scripts/openapi-baseline.cjs` 用「最小 Nest app + 全 12 controller + `noopProxy` 桩 provider」
+  生成 `apps/backend/test/fixtures/openapi-baseline.json`（**12 controllers / 93 paths / 93 operations**，二次生成 byte-identical）。
+  `@Inject(forwardRef(...))`、`@Recaptcha()`（GoogleRecaptchaGuard）依赖均已打桩；`dist/main.js` 预塞进 `require.cache` 防 `bootstrap()`。
+- **验收**：`backend` build/check-types/lint/test（**87**，含 pipeline 9 + bridge 3 + baseline 3）全绿；基线脚本幂等。
+- **纠正**：迁移期 seam 路由**不经** Nest `AuthMiddleware`（`create()` 不 `init()`，中间件在 `listen()` 才绑）——M7.3 需在 seam 层补鉴权。

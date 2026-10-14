@@ -14,6 +14,7 @@
 export const BACKEND_BUNDLE_NAMES = [
   "@libreoj/backend-domain-modules",
   "@libreoj/plugin-http-nest",
+  "@libreoj/backend-http-routes",
   "@libreoj/backend-infra",
   "@libreoj/backend-problem-data-import",
   "@libreoj/plugin-code-language",

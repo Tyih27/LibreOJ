@@ -59,6 +59,7 @@ import { permissionPlugin } from "./plugin/domains/permission.plugin";
 import { problemTypePlugin } from "./plugin/domains/problem-type.plugin";
 import { settingsPlugin } from "./plugin/domains/settings.plugin";
 import { infraPlugin } from "./plugin/infra.plugin";
+import { httpRoutesPlugin } from "./plugin/http-routes.plugin";
 import { problemTypeRegistryPlugin } from "./plugin/problem-type-registry.plugin";
 import { problemDataImportersPlugin } from "./plugin/problemDataImporters.plugin";
 import { setPluginHost } from "./plugin/plugin-host";
@@ -173,6 +174,7 @@ async function bootstrap() {
       listen: false,
       nestOptions
     }),
+    "@libreoj/backend-http-routes": httpRoutesPlugin,
     "@libreoj/backend-infra": infraPlugin,
     "@libreoj/backend-problem-data-import": problemDataImportersPlugin,
     "@libreoj/plugin-code-language": codeLanguagePlugin,

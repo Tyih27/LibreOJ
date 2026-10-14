@@ -65,3 +65,42 @@ stack is migrated to a Nest-free provider. The `@nestjs/swagger` coupling is con
 it can be replaced when NestJS is removed. `test/openapi-builder.test.ts` checks the output against
 `SwaggerModule.createDocument` for the homepage routes.
 
+### Baseline snapshot
+
+`test/fixtures/openapi-baseline.json` is the pre-migration OpenAPI document for all twelve controllers, captured
+before any controller is moved onto declarative routes. `scripts/openapi-baseline.cjs` regenerates it: it builds a
+minimal Nest application from the compiled controllers, stubs their (and their enhancers') constructor dependencies
+with a self-returning proxy, and serializes `SwaggerModule.createDocument` without binding a port. Run it after a
+build:
+
+```bash
+pnpm --filter @libreoj/backend build
+node apps/backend/scripts/openapi-baseline.cjs
+```
+
+`test/openapi-baseline.test.ts` guards the fixture's structure and its route set (93 routes across the twelve
+controllers) so a dropped or added route fails loudly. Later milestones assert a migrated `buildOpenApiDocument`
+matches this fixture.
+
+## Declarative routes and the HTTP pipeline (transitional)
+
+The NestJS-removal migration moves controllers onto provider-agnostic `HttpRouteSpec`s incrementally while Nest still
+provides DI and the remaining controllers:
+
+- `src/plugin/http/pipeline.ts` exports `executeHttpRoute(spec, { request, response })`. It validates the route's
+  declared `query`/`params`/`body` DTO classes with Nest's `ValidationPipe` semantics
+  (`plainToInstance` without implicit conversion, `whitelist`, `forbidNonWhitelisted`) and invokes the handler with a
+  normalized request. The validated inputs become `request.body`/`query`/`params`, the session is forwarded as
+  `request.session`, the provider's raw request stays available as `request.raw`, and the handler mutates the normalized
+  `response`. `mapThrownError` turns a thrown error into the same `{ status, body }` the inbound `ErrorFilter` emits.
+  It is provider-neutral: it depends only on the `http` seam, so the `http-fastify` provider reuses it unchanged.
+- `src/plugin/http-routes.plugin.ts` is the `@libreoj/backend-http-routes` bundle. It provides the `httpRoutes`
+  registry (the extension point domain plugins contribute specs to) and mounts each spec on the `http` seam at
+  `/api<path>`, since the seam's raw `app.use(router)` mounting is not affected by Nest's `setGlobalPrefix("api")`.
+  Routes are mounted as specs are added, because the `http-nest` provider freezes its router during its own `start`.
+
+The pipeline does **not** perform authentication: it only forwards whatever session the provider's request pipeline
+populated. Note that with the current `http-nest` provider a Nest middleware such as `AuthMiddleware` is registered
+during `init()` (which runs when the port is bound), i.e. after the plugin router is mounted, so a migrated route does
+not currently observe `req.session`. Wiring auth for migrated routes is part of the controller migration.
+
