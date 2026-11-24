@@ -99,8 +99,34 @@ provides DI and the remaining controllers:
   `/api<path>`, since the seam's raw `app.use(router)` mounting is not affected by Nest's `setGlobalPrefix("api")`.
   Routes are mounted as specs are added, because the `http-nest` provider freezes its router during its own `start`.
 
-The pipeline does **not** perform authentication: it only forwards whatever session the provider's request pipeline
-populated. Note that with the current `http-nest` provider a Nest middleware such as `AuthMiddleware` is registered
-during `init()` (which runs when the port is bound), i.e. after the plugin router is mounted, so a migrated route does
-not currently observe `req.session`. Wiring auth for migrated routes is part of the controller migration.
+The pipeline does **not** itself authenticate: it only forwards whatever session the request pipeline populated. Seam
+routes are mounted with raw `app.use(router)` before Nest calls `init()`, so they never run through Nest's
+`AuthMiddleware`; the bridge therefore registers a seam-layer auth middleware (see below).
+
+### Service resolution for migrated routes
+
+A migrated route handler cannot receive its dependencies through Nest's constructor injection, and it cannot capture
+service instances at registration time either (the `http-nest` provider freezes its router during `start`). It instead
+resolves them at request time through `src/service-resolver.ts`:
+
+- `svc(key)` returns the service for a camelCase key typed by the `BackendServices` interface, e.g.
+  `svc("userService")` is a `UserService`. It throws if no resolver is bound yet.
+- `bindNestServiceResolver(nestApp, tokens)` resolves each key as `nestApp.get(ClassToken, { strict: false })`. This is
+  the migration-time binding, installed in `main.ts` right after `host.load()`.
+- `bindManualServiceResolver(services)` resolves the keys off a plain object built by the composition root. This is the
+  M7.5 cutover: the same route code keeps working once Nest is removed.
+
+The resolver is module-private and only the two bind functions can set it. This is a deliberate, local service locator
+confined to the HTTP route layer; business services are not registered in the plugin kernel.
+
+### Seam-layer auth middleware
+
+Because seam routes bypass Nest's middleware pipeline, `src/plugin/http/auth.middleware.ts` reproduces
+`AuthMiddleware`'s session resolution on the seam. It reads the bearer key, resolves `authSessionService` and
+`userPrivilegeService` through `svc`, assigns `request.raw.session` (including `userCanSkipRecaptcha`), and runs the
+rest of the pipeline inside the shared async-local-storage context so `AuditService.getCurrentRequest()` works. Like
+`AuthMiddleware` it never rejects a request. It is created by `createSeamAuthMiddleware()` and registered once on the
+`http` seam in `http-routes.plugin.ts`'s `apply`. The session-resolution and context helpers (`resolveSession`,
+`runWithCurrentRequest`) live in `src/auth/auth.middleware.ts` and are shared with the Nest middleware, so there is a
+single implementation and a single async-local store.
 

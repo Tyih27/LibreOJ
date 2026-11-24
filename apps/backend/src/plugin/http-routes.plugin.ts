@@ -14,8 +14,10 @@
  * The backend's global `api` prefix is applied here: the seam mounts routes with raw `app.use(router)`, which Nest's
  * `setGlobalPrefix("api")` does not touch, so the bridge prepends `/api` to reproduce the public URL.
  *
- * Auth is not performed in M7.1's pipeline: it only forwards the session that the provider's request pipeline has
- * already populated on the raw request. See the note on {@link executeHttpRoute}.
+ * The pipeline itself does not authenticate: it forwards the session the request pipeline populated. Because the seam
+ * mounts its router before Nest's middleware runs, this plugin registers {@link createSeamAuthMiddleware} on the `http`
+ * seam in its `apply`, so a migrated route observes the same `request.raw.session` (and async-local request context)
+ * that a Nest middleware would have produced.
  */
 
 import {
@@ -29,6 +31,7 @@ import {
 } from "@libreoj/plugin-api";
 import type { PluginDefinition } from "@libreoj/plugin-core";
 
+import { createSeamAuthMiddleware } from "./http/auth.middleware";
 import { executeHttpRoute, mapThrownError } from "./http/pipeline";
 
 /** Reproduces the public URL of a route: the seam path with the application's global `api` prefix prepended. */
@@ -99,6 +102,9 @@ export const httpRoutesPlugin: PluginDefinition = {
   inject: { required: [HTTP] },
   apply(ctx) {
     const server = ctx.get<HttpServer>(HTTP);
+    // Seam routes bypass Nest's middleware pipeline, so the session has to be resolved here before any route runs.
+    // The middleware is registered once and tolerates there being zero routes.
+    server.use(createSeamAuthMiddleware());
     ctx.set(
       HTTP_ROUTES,
       new HttpRouteRegistryService(spec => server.route(spec.method, withApiPrefix(spec.path), routeHandler(spec)))

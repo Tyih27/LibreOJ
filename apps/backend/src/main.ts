@@ -41,6 +41,36 @@ import { MigrationService } from "./migration/migration.service";
 import { ErrorFilter } from "./error.filter";
 import { RecaptchaFilter } from "./recaptcha.filter";
 import { ClusterService } from "./cluster/cluster.service";
+import { AuditService } from "./audit/audit.service";
+import { AuthService } from "./auth/auth.service";
+import { AuthEmailVerificationCodeService } from "./auth/auth-email-verification-code.service";
+import { AuthIpLocationService } from "./auth/auth-ip-location.service";
+import { AuthSessionService } from "./auth/auth-session.service";
+import { CodeLanguageService } from "./code-language/code-language.service";
+import { DiscussionService } from "./discussion/discussion.service";
+import { EventReportService } from "./event-report/event-report.service";
+import { FileService } from "./file/file.service";
+import { GroupService } from "./group/group.service";
+import { HackService } from "./hack/hack.service";
+import { HomepageService } from "./homepage/homepage.service";
+import { JudgeClientService } from "./judge/judge-client.service";
+import { JudgeQueueService } from "./judge/judge-queue.service";
+import { LocalizedContentService } from "./localized-content/localized-content.service";
+import { MailService } from "./mail/mail.service";
+import { MetricsService } from "./metrics/metrics.service";
+import { UserMigrationService } from "./migration/user-migration.service";
+import { PermissionService } from "./permission/permission.service";
+import { ProblemService } from "./problem/problem.service";
+import { ProblemTypeFactoryService } from "./problem-type/problem-type-factory.service";
+import { LockService } from "./redis/lock.service";
+import { RedisService } from "./redis/redis.service";
+import { SettingsService } from "./settings/settings.service";
+import { SubmissionProgressService } from "./submission/submission-progress.service";
+import { SubmissionStatisticsService } from "./submission/submission-statistics.service";
+import { SubmissionService } from "./submission/submission.service";
+import { UserPrivilegeService } from "./user/user-privilege.service";
+import { UserService } from "./user/user.service";
+import { bindNestServiceResolver, type BackendServices } from "./service-resolver";
 import type { BackendBundleName } from "./plugin/bundles";
 import { domainModulesPlugin } from "./plugin/domain-modules.plugin";
 import { auditPlugin } from "./plugin/domains/audit.plugin";
@@ -71,6 +101,47 @@ String.prototype.format = function format(...args) {
 };
 
 export const appGitRepoInfo = getGitRepoInfo();
+
+/**
+ * The Nest class token for each {@link BackendServices} key. `bindNestServiceResolver` uses it to turn a `svc(key)` call
+ * into `nestApp.get(ClassToken, { strict: false })`. Typing the map as `Record<keyof BackendServices, unknown>` makes
+ * `check-types` fail if a key is added to `BackendServices` without a token here (or vice versa). The M7.5 cutover
+ * replaces this whole map with `bindManualServiceResolver`.
+ */
+const backendServiceTokens: Record<keyof BackendServices, unknown> = {
+  configService: ConfigService,
+  redisService: RedisService,
+  lockService: LockService,
+  authService: AuthService,
+  authSessionService: AuthSessionService,
+  authEmailVerificationCodeService: AuthEmailVerificationCodeService,
+  authIpLocationService: AuthIpLocationService,
+  userService: UserService,
+  userPrivilegeService: UserPrivilegeService,
+  userMigrationService: UserMigrationService,
+  submissionService: SubmissionService,
+  submissionProgressService: SubmissionProgressService,
+  submissionStatisticsService: SubmissionStatisticsService,
+  problemService: ProblemService,
+  problemTypeFactoryService: ProblemTypeFactoryService,
+  codeLanguageService: CodeLanguageService,
+  groupService: GroupService,
+  permissionService: PermissionService,
+  discussionService: DiscussionService,
+  homepageService: HomepageService,
+  hackService: HackService,
+  judgeClientService: JudgeClientService,
+  judgeQueueService: JudgeQueueService,
+  fileService: FileService,
+  mailService: MailService,
+  metricsService: MetricsService,
+  clusterService: ClusterService,
+  settingsService: SettingsService,
+  auditService: AuditService,
+  localizedContentService: LocalizedContentService,
+  migrationService: MigrationService,
+  eventReportService: EventReportService
+};
 
 async function runMigration(app: NestExpressApplication, migrationConfigFile: string) {
   const migrationService = app.get(MigrationService);
@@ -224,6 +295,11 @@ async function bootstrap() {
 
   const httpServer = host.root.get<HttpNestServer>(HTTP);
   const app = httpServer.application as NestExpressApplication;
+
+  // The http provider created (but did not bind) the Nest application during its `start`, so every service is
+  // instantiable and can be resolved by `svc()` from a migrated route handler. This is the migration-time binding; the
+  // M7.5 cutover swaps it for `bindManualServiceResolver(services)`.
+  bindNestServiceResolver(app, backendServiceTokens);
 
   if (migrationConfigFile)
     // The provider has created and configured the application without binding it, so migration behaves as before:

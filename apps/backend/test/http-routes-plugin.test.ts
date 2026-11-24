@@ -1,6 +1,8 @@
 import "reflect-metadata";
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 
 import { IsInt, IsString } from "class-validator";
@@ -11,6 +13,7 @@ import {
   type HttpDisposer,
   type HttpHandler,
   type HttpMethod,
+  type HttpMiddleware,
   type HttpRequest,
   type HttpResponse,
   type HttpRouteRegistry,
@@ -18,7 +21,20 @@ import {
   type HttpServer
 } from "@libreoj/plugin-api";
 
-import { httpRoutesPlugin, HttpRouteRegistryService, withApiPrefix } from "../src/plugin/http-routes.plugin";
+// The bridge now registers the seam auth middleware, whose module graph reaches TypeORM entities (which throw without
+// `emitDecoratorMetadata`, not emitted by `tsx`). Import the compiled plugin from `dist`; the backend must be built
+// first, as for the OpenAPI tests.
+const DIST = path.resolve(__dirname, "../dist");
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function distModule(relativePath: string): any {
+  const fullPath = path.join(DIST, relativePath);
+  assert.ok(fs.existsSync(fullPath), `missing compiled artifact ${relativePath}; run the backend build first`);
+  // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+  return require(fullPath);
+}
+
+const { httpRoutesPlugin, HttpRouteRegistryService, withApiPrefix } = distModule("plugin/http-routes.plugin");
 
 class BodyDto {
   @IsString()
@@ -34,9 +50,10 @@ interface Registered {
   handler: HttpHandler;
 }
 
-/** A minimal in-memory `HttpServer` that records the routes mounted on it. */
+/** A minimal in-memory `HttpServer` that records the routes and middleware mounted on it. */
 class FakeServer {
   readonly routes: Registered[] = [];
+  readonly middlewares: HttpMiddleware[] = [];
 
   route(method: HttpMethod, path: string, handler: HttpHandler): HttpDisposer {
     const entry: Registered = { method, path, handler };
@@ -48,6 +65,18 @@ class FakeServer {
       active = false;
       const index = this.routes.indexOf(entry);
       if (index >= 0) this.routes.splice(index, 1);
+    };
+  }
+
+  use(middleware: HttpMiddleware): HttpDisposer {
+    this.middlewares.push(middleware);
+
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      const index = this.middlewares.indexOf(middleware);
+      if (index >= 0) this.middlewares.splice(index, 1);
     };
   }
 }
@@ -92,6 +121,7 @@ test("httpRoutesPlugin provides the registry and mounts prefixed routes on the h
 
   const registry = services.get(HTTP_ROUTES) as HttpRouteRegistry;
   assert.ok(registry, "the plugin should provide the httpRoutes registry");
+  assert.equal(server.middlewares.length, 1, "the plugin should register the seam auth middleware");
 
   registry.add({ method: "POST", path: "/example", request: { body: BodyDto }, handler: () => undefined });
 

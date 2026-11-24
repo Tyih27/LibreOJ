@@ -145,7 +145,13 @@ const externalPackageVersions = Object.fromEntries(
 
 export default defineConfig({
   server: {
-    port: 3000
+    port: 3000,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:2002",
+        ws: true
+      }
+    }
   },
   plugins: [
     react({
